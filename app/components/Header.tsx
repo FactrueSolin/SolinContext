@@ -11,7 +11,7 @@ export default function Header() {
         toggleProjectList,
         toggleApiConfig,
         saveProject,
-        loadProject,
+        updateProjectName,
     } = useEditor();
 
     const [isEditingName, setIsEditingName] = useState(false);
@@ -28,23 +28,20 @@ export default function Header() {
 
     const handleSaveName = async () => {
         if (currentProject && editedName.trim() && editedName !== currentProject.meta.name) {
-            // Create a shallow copy and update name
-            const updatedProject = {
-                ...currentProject,
-                meta: { ...currentProject.meta, name: editedName.trim() }
-            };
-
             try {
                 const response = await fetch(`/api/projects/${currentProject.meta.id}`, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify(updatedProject),
+                    body: JSON.stringify({
+                        ...currentProject,
+                        meta: { ...currentProject.meta, name: editedName.trim() }
+                    }),
                 });
 
                 if (response.ok) {
-                    await loadProject(currentProject.meta.id);
+                    updateProjectName(editedName.trim());
                 } else {
                     console.error('Failed to update name');
                 }

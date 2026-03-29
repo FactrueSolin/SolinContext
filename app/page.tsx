@@ -50,8 +50,8 @@ export default function Home() {
                 <MessageList />
               </div>
 
-              {/* Bottom Toolbar */}
-              <div className="sticky bottom-0 z-10 bg-[var(--background)]/80 backdrop-blur-md border-t border-[var(--border)] -mx-4 md:-mx-6 lg:-mx-8 px-4 md:px-6 lg:px-8 py-3 mt-4">
+              {/* Bottom Toolbar - 正常流式布局，紧跟消息列表 */}
+              <div className="bg-[var(--background)] border-t border-[var(--border)] px-4 md:px-6 lg:px-8 py-3 mt-4">
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => addMessage('user')}

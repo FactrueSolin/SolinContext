@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { SearchResultBlock } from '../../types';
+import AutoResizeTextarea from '../ui/AutoResizeTextarea';
 
 interface SearchResultBlockEditorProps {
     block: SearchResultBlock;
@@ -9,7 +10,7 @@ interface SearchResultBlockEditorProps {
 }
 
 const inputClass = "p-2 border border-[var(--input-border)] rounded-[var(--radius-sm)] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-yellow-400/20 focus:border-yellow-400 transition-all duration-[var(--transition-fast)]";
-const textareaClass = "w-full p-2.5 border border-[var(--input-border)] rounded-[var(--radius-sm)] resize-y min-h-[80px] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-yellow-400/20 focus:border-yellow-400 transition-all duration-[var(--transition-fast)]";
+const textareaClass = "w-full p-2.5 border border-[var(--input-border)] rounded-[var(--radius-sm)] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-yellow-400/20 focus:border-yellow-400 transition-all duration-[var(--transition-fast)]";
 const labelClass = "text-[11px] font-medium text-[var(--muted-foreground)]";
 
 export default function SearchResultBlockEditor({ block, onUpdate }: SearchResultBlockEditorProps) {
@@ -42,11 +43,12 @@ export default function SearchResultBlockEditor({ block, onUpdate }: SearchResul
 
             <div className="flex flex-col gap-1.5">
                 <label className={labelClass}>Content</label>
-                <textarea
+                <AutoResizeTextarea
                     className={textareaClass}
                     value={block.content}
                     onChange={(e) => onUpdate({ ...block, content: e.target.value })}
                     placeholder="搜索结果内容..."
+                    minHeight={80}
                 />
             </div>
         </div>

@@ -3,6 +3,7 @@
 import React from 'react';
 import { Plus, X } from 'lucide-react';
 import { WebSearchToolResultBlock, WebSearchResultItem } from '../../types';
+import AutoResizeTextarea from '../ui/AutoResizeTextarea';
 
 interface WebSearchToolResultBlockEditorProps {
     block: WebSearchToolResultBlock;
@@ -14,7 +15,7 @@ function createEmptySearchResultItem(): WebSearchResultItem {
 }
 
 const inputClass = "p-2 border border-[var(--input-border)] rounded-[var(--radius-sm)] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-teal-400/20 focus:border-teal-400 transition-all duration-[var(--transition-fast)]";
-const textareaClass = "w-full p-2 border border-[var(--input-border)] rounded-[var(--radius-sm)] resize-y min-h-[50px] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-teal-400/20 focus:border-teal-400 transition-all duration-[var(--transition-fast)]";
+const textareaClass = "w-full p-2 border border-[var(--input-border)] rounded-[var(--radius-sm)] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-teal-400/20 focus:border-teal-400 transition-all duration-[var(--transition-fast)]";
 const labelClass = "text-[11px] font-medium text-[var(--muted-foreground)]";
 
 export default function WebSearchToolResultBlockEditor({ block, onUpdate }: WebSearchToolResultBlockEditorProps) {
@@ -102,11 +103,12 @@ export default function WebSearchToolResultBlockEditor({ block, onUpdate }: WebS
                         </div>
                         <div className="flex flex-col gap-1.5">
                             <label className={labelClass}>Snippet</label>
-                            <textarea
+                            <AutoResizeTextarea
                                 className={textareaClass}
                                 value={item.snippet}
                                 onChange={(e) => handleItemUpdate(index, 'snippet', e.target.value)}
                                 placeholder="搜索结果摘要..."
+                                minHeight={50}
                             />
                         </div>
                     </div>

@@ -42,7 +42,8 @@ export type EditorAction =
     | { type: 'DELETE_CONTENT_BLOCK'; messageId: string; blockIndex: number }
     | { type: 'UPDATE_CONTENT_BLOCK'; messageId: string; blockIndex: number; block: ContentBlock }
     | { type: 'MOVE_MESSAGE'; messageId: string; direction: 'up' | 'down' }
-    | { type: 'SET_ASSISTANT_CONTENT'; messageId: string; content: ContentBlock[] };
+    | { type: 'SET_ASSISTANT_CONTENT'; messageId: string; content: ContentBlock[] }
+    | { type: 'UPDATE_PROJECT_NAME'; name: string };
 
 export const initialState: EditorState = {
     projects: [],
@@ -241,6 +242,18 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
                             ? { ...m, content: action.content, isGenerating: false }
                             : m
                     ),
+                },
+            };
+        case 'UPDATE_PROJECT_NAME':
+            if (!state.currentProject) return state;
+            return {
+                ...state,
+                currentProject: {
+                    ...state.currentProject,
+                    meta: {
+                        ...state.currentProject.meta,
+                        name: action.name,
+                    },
                 },
             };
         default:
@@ -452,6 +465,7 @@ export function useEditor() {
     const updateContentBlock = useCallback((messageId: string, blockIndex: number, block: ContentBlock) => dispatch({ type: 'UPDATE_CONTENT_BLOCK', messageId, blockIndex, block }), [dispatch]);
     const moveMessage = useCallback((messageId: string, direction: 'up' | 'down') => dispatch({ type: 'MOVE_MESSAGE', messageId, direction }), [dispatch]);
     const setAssistantContent = useCallback((messageId: string, content: ContentBlock[]) => dispatch({ type: 'SET_ASSISTANT_CONTENT', messageId, content }), [dispatch]);
+    const updateProjectName = useCallback((name: string) => dispatch({ type: 'UPDATE_PROJECT_NAME', name }), [dispatch]);
     const setError = useCallback((error: string | null) => dispatch({ type: 'SET_ERROR', error }), [dispatch]);
 
     return {
@@ -475,6 +489,7 @@ export function useEditor() {
         updateContentBlock,
         moveMessage,
         setAssistantContent,
+        updateProjectName,
         setError,
     };
 }

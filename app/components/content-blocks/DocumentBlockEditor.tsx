@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useCallback } from 'react';
 import { DocumentBlock, DocumentSource, Base64PDFSource, PlainTextSource, URLPDFSource } from '../../types';
+import AutoResizeTextarea from '../ui/AutoResizeTextarea';
 
 interface DocumentBlockEditorProps {
     block: DocumentBlock;
@@ -14,7 +15,7 @@ const ACCEPT_STRING = 'application/pdf';
 
 const inputClass = "p-2 border border-[var(--input-border)] rounded-[var(--radius-sm)] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 transition-all duration-[var(--transition-fast)]";
 const selectClass = "p-2 border border-[var(--input-border)] rounded-[var(--radius-sm)] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 transition-all duration-[var(--transition-fast)]";
-const textareaNoMonoClass = "w-full p-2.5 border border-[var(--input-border)] rounded-[var(--radius-sm)] resize-y min-h-[80px] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 transition-all duration-[var(--transition-fast)]";
+const textareaNoMonoClass = "w-full p-2.5 border border-[var(--input-border)] rounded-[var(--radius-sm)] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 transition-all duration-[var(--transition-fast)]";
 const labelClass = "text-[11px] font-medium text-[var(--muted-foreground)]";
 
 /** 将字节数格式化为人类可读的文件大小 */
@@ -260,7 +261,7 @@ export default function DocumentBlockEditor({ block, onUpdate }: DocumentBlockEd
             {sourceType === 'text' && (
                 <div className="flex flex-col gap-1.5">
                     <label className={labelClass}>Text Content</label>
-                    <textarea
+                    <AutoResizeTextarea
                         className={textareaNoMonoClass}
                         value={(block.source as PlainTextSource).data}
                         onChange={(e) => onUpdate({
@@ -268,6 +269,7 @@ export default function DocumentBlockEditor({ block, onUpdate }: DocumentBlockEd
                             source: { type: 'text', media_type: 'text/plain', data: e.target.value } satisfies PlainTextSource,
                         })}
                         placeholder="纯文本内容..."
+                        minHeight={80}
                     />
                 </div>
             )}

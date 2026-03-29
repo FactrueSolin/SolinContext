@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { ServerToolUseBlock, ServerToolName } from '../../types';
+import AutoResizeTextarea from '../ui/AutoResizeTextarea';
 
 interface ServerToolUseBlockEditorProps {
     block: ServerToolUseBlock;
@@ -12,7 +13,7 @@ const SERVER_TOOL_NAMES: ServerToolName[] = ['web_search', 'web_fetch', 'code_ex
 
 const inputClass = "p-2 border border-[var(--input-border)] rounded-[var(--radius-sm)] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-cyan-400/20 focus:border-cyan-400 transition-all duration-[var(--transition-fast)]";
 const selectClass = "p-2 border border-[var(--input-border)] rounded-[var(--radius-sm)] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-cyan-400/20 focus:border-cyan-400 transition-all duration-[var(--transition-fast)]";
-const textareaClass = "w-full p-2.5 border border-[var(--input-border)] rounded-[var(--radius-sm)] resize-y min-h-[100px] text-sm font-mono bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-cyan-400/20 focus:border-cyan-400 transition-all duration-[var(--transition-fast)]";
+const textareaClass = "w-full p-2.5 border border-[var(--input-border)] rounded-[var(--radius-sm)] text-sm font-mono bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-cyan-400/20 focus:border-cyan-400 transition-all duration-[var(--transition-fast)]";
 const labelClass = "text-[11px] font-medium text-[var(--muted-foreground)]";
 
 export default function ServerToolUseBlockEditor({ block, onUpdate }: ServerToolUseBlockEditorProps) {
@@ -47,7 +48,7 @@ export default function ServerToolUseBlockEditor({ block, onUpdate }: ServerTool
 
             <div className="flex flex-col gap-1.5">
                 <label className={labelClass}>Input (JSON)</label>
-                <textarea
+                <AutoResizeTextarea
                     className={textareaClass}
                     value={JSON.stringify(block.input, null, 2)}
                     onChange={(e) => {
@@ -67,6 +68,7 @@ export default function ServerToolUseBlockEditor({ block, onUpdate }: ServerTool
                         }
                     }}
                     placeholder="{}"
+                    minHeight={100}
                 />
             </div>
         </div>

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { WebFetchToolResultBlock } from '../../types';
+import AutoResizeTextarea from '../ui/AutoResizeTextarea';
 
 interface WebFetchToolResultBlockEditorProps {
     block: WebFetchToolResultBlock;
@@ -9,7 +10,7 @@ interface WebFetchToolResultBlockEditorProps {
 }
 
 const inputClass = "p-2 border border-[var(--input-border)] rounded-[var(--radius-sm)] text-sm bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all duration-[var(--transition-fast)]";
-const textareaClass = "w-full p-2.5 border border-[var(--input-border)] rounded-[var(--radius-sm)] resize-y min-h-[100px] text-sm font-mono bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all duration-[var(--transition-fast)]";
+const textareaClass = "w-full p-2.5 border border-[var(--input-border)] rounded-[var(--radius-sm)] text-sm font-mono bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all duration-[var(--transition-fast)]";
 const labelClass = "text-[11px] font-medium text-[var(--muted-foreground)]";
 
 export default function WebFetchToolResultBlockEditor({ block, onUpdate }: WebFetchToolResultBlockEditorProps) {
@@ -42,11 +43,12 @@ export default function WebFetchToolResultBlockEditor({ block, onUpdate }: WebFe
 
             <div className="flex flex-col gap-1.5">
                 <label className={labelClass}>Content</label>
-                <textarea
+                <AutoResizeTextarea
                     className={textareaClass}
                     value={block.content}
                     onChange={(e) => onUpdate({ ...block, content: e.target.value })}
                     placeholder="抓取到的网页内容..."
+                    minHeight={100}
                 />
             </div>
         </div>
