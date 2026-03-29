@@ -18,7 +18,6 @@ describe('editorReducer', () => {
             baseUrl: 'https://api.anthropic.com',
             apiKey: 'test-key',
             model: 'claude-3',
-            maxTokens: 1000
         }
     };
 

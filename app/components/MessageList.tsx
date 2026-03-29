@@ -23,11 +23,11 @@ export default function MessageList() {
     if (!currentProject) return null;
 
     return (
-        <div className="flex flex-col gap-6 py-4">
+        <div className="flex flex-col gap-4 py-2">
             {currentProject.messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center p-12 text-gray-500 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-dashed border-gray-300 dark:border-gray-700">
-                    <p className="mb-2">暂无消息</p>
-                    <p className="text-sm">点击下方按钮添加</p>
+                <div className="flex flex-col items-center justify-center p-12 text-[var(--muted-foreground)] bg-[var(--muted)]/50 rounded-[var(--radius-lg)] border border-dashed border-[var(--border)]">
+                    <p className="mb-1 text-sm font-medium">暂无消息</p>
+                    <p className="text-xs">点击下方按钮添加</p>
                 </div>
             ) : (
                 currentProject.messages.map((message, index) => (

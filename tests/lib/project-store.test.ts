@@ -94,7 +94,6 @@ describe('ProjectStore', () => {
             baseUrl: 'http://test',
             apiKey: 'key',
             model: 'model',
-            maxTokens: 100
         }
     };
 

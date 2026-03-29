@@ -20,11 +20,29 @@ interface AnthropicResponse {
     };
 }
 
+// 根据模型名推测合适的 max_tokens 值
+function inferMaxTokens(model: string): number {
+    // Claude 4 系列和 claude-sonnet-4 系列
+    if (model.includes('claude-4') || model.includes('claude-sonnet-4') || model.includes('claude-opus-4')) {
+        return 16000;
+    }
+    // Claude 3.5 系列
+    if (model.includes('claude-3-5') || model.includes('claude-3.5')) {
+        return 8192;
+    }
+    // Claude 3 系列
+    if (model.includes('claude-3')) {
+        return 4096;
+    }
+    // 默认值
+    return 4096;
+}
+
 export async function POST(request: Request) {
     try {
         const body = await request.json() as GenerateRequest;
 
-        const { baseUrl, apiKey, model, maxTokens, systemPrompt, messages } = body;
+        const { baseUrl, apiKey, model, systemPrompt, messages } = body;
 
         if (!apiKey) {
             return NextResponse.json({ error: 'API key is required' }, { status: 400 });
@@ -35,7 +53,7 @@ export async function POST(request: Request) {
 
         const requestBody: Record<string, unknown> = {
             model,
-            max_tokens: maxTokens ?? 4096,
+            max_tokens: inferMaxTokens(model),
             messages: messages.map(msg => ({
                 role: msg.role,
                 content: msg.content,
@@ -72,7 +90,7 @@ export async function POST(request: Request) {
                 return { type: 'text' as const, text: block.text };
             }
             if (block.type === 'thinking' && block.thinking !== undefined) {
-                return { type: 'thinking' as const, thinking: block.thinking };
+                return { type: 'thinking' as const, thinking: block.thinking, signature: '' };
             }
             // 默认返回text类型
             return { type: 'text' as const, text: block.text || '' };

@@ -74,7 +74,6 @@ describe('Projects API', () => {
                 baseUrl: 'custom',
                 apiKey: 'key',
                 model: 'model',
-                maxTokens: 100
             };
             const reqObj = {
                 json: async () => ({

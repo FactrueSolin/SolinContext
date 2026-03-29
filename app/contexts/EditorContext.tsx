@@ -140,13 +140,40 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
                                 newBlock = { type: 'text', text: '' };
                                 break;
                             case 'thinking':
-                                newBlock = { type: 'thinking', thinking: '' };
+                                newBlock = { type: 'thinking', thinking: '', signature: '' };
+                                break;
+                            case 'redacted_thinking':
+                                newBlock = { type: 'redacted_thinking', data: '' };
                                 break;
                             case 'tool_use':
                                 newBlock = { type: 'tool_use', id: generateId(), name: '', input: {} };
                                 break;
                             case 'tool_result':
                                 newBlock = { type: 'tool_result', tool_use_id: '', content: '' };
+                                break;
+                            case 'image':
+                                newBlock = { type: 'image', source: { type: 'url', url: '' } };
+                                break;
+                            case 'document':
+                                newBlock = { type: 'document', source: { type: 'text', media_type: 'text/plain', data: '' } };
+                                break;
+                            case 'search_result':
+                                newBlock = { type: 'search_result', source: '', title: '', content: '' };
+                                break;
+                            case 'server_tool_use':
+                                newBlock = { type: 'server_tool_use', id: generateId(), name: 'web_search', input: {} };
+                                break;
+                            case 'web_search_tool_result':
+                                newBlock = { type: 'web_search_tool_result', tool_use_id: '', content: [] };
+                                break;
+                            case 'web_fetch_tool_result':
+                                newBlock = { type: 'web_fetch_tool_result', tool_use_id: '', url: '', content: '' };
+                                break;
+                            case 'code_execution_tool_result':
+                                newBlock = { type: 'code_execution_tool_result', tool_use_id: '', stdout: '', stderr: '', return_code: 0 };
+                                break;
+                            case 'container_upload':
+                                newBlock = { type: 'container_upload', file_id: '' };
                                 break;
                             default:
                                 newBlock = { type: 'text', text: '' };
@@ -372,7 +399,6 @@ export function useEditor() {
                 baseUrl: state.currentProject.apiConfig.baseUrl,
                 apiKey: state.currentProject.apiConfig.apiKey,
                 model: state.currentProject.apiConfig.model,
-                maxTokens: state.currentProject.apiConfig.maxTokens,
                 systemPrompt: state.currentProject.systemPrompt,
                 messages: previousMessages.map((m) => ({
                     role: m.role,

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useEditor } from '../contexts/EditorContext';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Terminal } from 'lucide-react';
 
 export default function SystemPromptEditor() {
     const {
@@ -15,36 +15,43 @@ export default function SystemPromptEditor() {
     if (!currentProject) return null;
 
     return (
-        <div className="mb-6 rounded-lg border border-yellow-200 dark:border-yellow-900/50 bg-system-bg shadow-sm overflow-hidden">
+        <div className="mb-6 rounded-[var(--radius-lg)] border border-[var(--system-border)] bg-[var(--system-bg)] shadow-sm overflow-hidden">
             <div
-                className="flex items-center justify-between p-3 cursor-pointer bg-yellow-100/50 dark:bg-yellow-900/20 hover:bg-yellow-100 dark:hover:bg-yellow-900/30 transition-colors"
+                className="flex items-center justify-between px-4 py-3 cursor-pointer bg-[var(--system-header)]/50 hover:bg-[var(--system-header)] transition-colors duration-[var(--transition-fast)]"
                 onClick={() => setIsExpanded(!isExpanded)}
             >
-                <div className="flex items-center space-x-2">
+                <div className="flex items-center gap-2.5">
+                    <div className="flex items-center justify-center w-6 h-6 rounded-full bg-yellow-200/60 dark:bg-yellow-800/30">
+                        <Terminal size={13} className="text-yellow-700 dark:text-yellow-400" />
+                    </div>
+                    <h3 className="font-semibold text-sm text-yellow-800 dark:text-yellow-400">System Prompt</h3>
                     {isExpanded ? (
-                        <ChevronDown size={18} className="text-yellow-700 dark:text-yellow-500" />
+                        <ChevronDown size={16} className="text-yellow-600 dark:text-yellow-500" />
                     ) : (
-                        <ChevronRight size={18} className="text-yellow-700 dark:text-yellow-500" />
+                        <ChevronRight size={16} className="text-yellow-600 dark:text-yellow-500" />
                     )}
-                    <h3 className="font-semibold text-yellow-800 dark:text-yellow-500">System Prompt</h3>
                 </div>
                 {!isExpanded && (
-                    <div className="text-sm text-yellow-600 dark:text-yellow-600/70 truncate max-w-xl">
+                    <div className="text-sm text-yellow-700/70 dark:text-yellow-500/60 truncate max-w-xl ml-4">
                         {currentProject.systemPrompt || '暂无内容'}
                     </div>
                 )}
             </div>
 
-            {isExpanded && (
-                <div className="p-3 border-t border-yellow-200 dark:border-yellow-900/50">
+            <div
+                className={`overflow-hidden transition-all duration-[var(--transition-slow)] ${
+                    isExpanded ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'
+                }`}
+            >
+                <div className="p-4 border-t border-[var(--system-border)]">
                     <textarea
                         value={currentProject.systemPrompt}
                         onChange={(e) => updateSystemPrompt(e.target.value)}
                         placeholder="在这里输入系统提示词 (System Prompt)..."
-                        className="w-full min-h-[120px] p-3 text-sm border border-yellow-300 dark:border-yellow-800 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-yellow-500 font-mono resize-y"
+                        className="w-full min-h-[120px] p-3 text-sm border border-yellow-300/60 dark:border-yellow-800/50 rounded-[var(--radius-md)] bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-yellow-500/30 focus:border-yellow-500 font-mono resize-y transition-all duration-[var(--transition-fast)]"
                     />
                 </div>
-            )}
+            </div>
         </div>
     );
 }

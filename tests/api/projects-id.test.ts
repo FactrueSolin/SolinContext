@@ -31,7 +31,6 @@ describe('Projects ID API', () => {
             baseUrl: 'url',
             apiKey: 'key',
             model: 'model',
-            maxTokens: 100
         }
     };
 

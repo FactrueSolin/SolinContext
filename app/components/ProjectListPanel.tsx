@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useEditor } from '../contexts/EditorContext';
-import { Plus, Trash2, X } from 'lucide-react';
+import { Plus, Trash2, X, FolderOpen } from 'lucide-react';
 
 export default function ProjectListPanel() {
     const {
@@ -41,50 +41,55 @@ export default function ProjectListPanel() {
     };
 
     return (
-        <div className="absolute top-14 left-0 bottom-0 w-80 bg-white dark:bg-gray-950 border-r border-gray-200 dark:border-gray-800 flex flex-col shadow-lg z-10 transition-transform duration-300 transform translate-x-0">
-            <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-800">
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">项目列表</h2>
-                <div className="flex items-center space-x-2">
+        <div className="absolute top-14 left-0 bottom-0 w-80 bg-[var(--panel-bg)] border-r border-[var(--border)] flex flex-col shadow-xl z-10 animate-[slideInLeft_200ms_ease-out]">
+            {/* Panel Header */}
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-[var(--border)]">
+                <div className="flex items-center gap-2">
+                    <FolderOpen size={16} className="text-[var(--muted-foreground)]" />
+                    <h2 className="text-sm font-semibold text-[var(--foreground)]">项目列表</h2>
+                </div>
+                <div className="flex items-center gap-1">
                     <button
                         onClick={() => setIsCreating(true)}
-                        className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors text-blue-500"
+                        className="p-1.5 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] text-[var(--primary)] active:scale-95"
                         title="新建项目"
                     >
-                        <Plus size={18} />
+                        <Plus size={16} />
                     </button>
                     <button
                         onClick={toggleProjectList}
-                        className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors text-gray-500"
+                        className="p-1.5 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] text-[var(--muted-foreground)] active:scale-95"
                         title="关闭"
                     >
-                        <X size={18} />
+                        <X size={16} />
                     </button>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2">
+            {/* Panel Content */}
+            <div className="flex-1 overflow-y-auto p-3">
                 {isCreating && (
-                    <form onSubmit={handleCreateProject} className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <form onSubmit={handleCreateProject} className="mb-3 p-3 bg-[var(--primary-light)] dark:bg-blue-900/20 rounded-[var(--radius-md)] border border-blue-200/60 dark:border-blue-800/40">
                         <input
                             type="text"
                             value={newProjectName}
                             onChange={(e) => setNewProjectName(e.target.value)}
                             placeholder="输入项目名称..."
-                            className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-700 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+                            className="w-full px-3 py-2 text-sm border border-[var(--input-border)] rounded-[var(--radius-sm)] bg-[var(--input-bg)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/20 focus:border-[var(--primary)] mb-2.5"
                             autoFocus
                         />
-                        <div className="flex justify-end space-x-2">
+                        <div className="flex justify-end gap-2">
                             <button
                                 type="button"
                                 onClick={() => { setIsCreating(false); setNewProjectName(''); }}
-                                className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-md transition-colors"
+                                className="px-3 py-1.5 text-sm text-[var(--muted-foreground)] hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)]"
                             >
                                 取消
                             </button>
                             <button
                                 type="submit"
                                 disabled={!newProjectName.trim()}
-                                className="px-3 py-1.5 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded-md transition-colors disabled:opacity-50"
+                                className="px-3 py-1.5 text-sm bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-[var(--primary-foreground)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] disabled:opacity-40 active:scale-95"
                             >
                                 创建
                             </button>
@@ -93,11 +98,12 @@ export default function ProjectListPanel() {
                 )}
 
                 {projects.length === 0 && !isCreating ? (
-                    <div className="text-center text-gray-500 dark:text-gray-400 p-4 mt-8">
-                        <p>暂无项目</p>
+                    <div className="text-center text-[var(--muted-foreground)] p-6 mt-8">
+                        <FolderOpen size={32} className="mx-auto mb-3 opacity-30" />
+                        <p className="text-sm mb-3">暂无项目</p>
                         <button
                             onClick={() => setIsCreating(true)}
-                            className="mt-4 text-blue-500 hover:underline"
+                            className="text-sm text-[var(--primary)] hover:underline"
                         >
                             创建一个新项目
                         </button>
@@ -109,10 +115,11 @@ export default function ProjectListPanel() {
                             return (
                                 <li
                                     key={project.id}
-                                    className={`group flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${isCurrent
-                                            ? 'bg-blue-100 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800/50'
-                                            : 'hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent'
-                                        }`}
+                                    className={`group flex items-center justify-between p-3 rounded-[var(--radius-md)] cursor-pointer transition-all duration-[var(--transition-fast)] ${
+                                        isCurrent
+                                            ? 'bg-[var(--primary-light)] dark:bg-blue-900/30 border border-[var(--user-border)]'
+                                            : 'hover:bg-[var(--muted)] border border-transparent'
+                                    }`}
                                     onClick={() => {
                                         if (!isCurrent) {
                                             loadProject(project.id);
@@ -120,10 +127,10 @@ export default function ProjectListPanel() {
                                     }}
                                 >
                                     <div className="flex flex-col min-w-0 flex-1 mr-2">
-                                        <span className={`text-sm font-medium truncate ${isCurrent ? 'text-blue-700 dark:text-blue-300' : 'text-gray-800 dark:text-gray-200'}`}>
+                                        <span className={`text-sm font-medium truncate ${isCurrent ? 'text-[var(--primary)]' : 'text-[var(--foreground)]'}`}>
                                             {project.name}
                                         </span>
-                                        <span className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                                        <span className="text-[11px] text-[var(--muted-foreground)] truncate mt-0.5">
                                             更新于: {new Date(project.updatedAt).toLocaleString()}
                                         </span>
                                     </div>
@@ -132,10 +139,10 @@ export default function ProjectListPanel() {
                                             e.stopPropagation();
                                             handleDeleteProject(project.id, project.name);
                                         }}
-                                        className={`p-1.5 text-gray-400 hover:text-red-500 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors opacity-0 group-hover:opacity-100 ${isCurrent ? 'opacity-100' : ''}`}
+                                        className={`p-1.5 text-[var(--muted-foreground)] hover:text-[var(--destructive)] rounded-[var(--radius-sm)] hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-[var(--transition-fast)] opacity-0 group-hover:opacity-100 ${isCurrent ? 'opacity-100' : ''}`}
                                         title="删除项目"
                                     >
-                                        <Trash2 size={16} />
+                                        <Trash2 size={14} />
                                     </button>
                                 </li>
                             );

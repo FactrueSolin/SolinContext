@@ -1,9 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useEditor } from '../contexts/EditorContext';
-import { FolderOpen, Save, Settings, Download, Upload, Code } from 'lucide-react';
-import { exportToXmlPrompt } from '../lib/utils';
+import { FolderOpen, Save, Settings, Download, Upload, Code, FileJson } from 'lucide-react';
+import { exportToXmlPrompt, exportToMessageJson } from '../lib/utils';
 
 export default function Header() {
     const {
@@ -17,6 +17,7 @@ export default function Header() {
     const [isEditingName, setIsEditingName] = useState(false);
     const [editedName, setEditedName] = useState('');
     const [isCopied, setIsCopied] = useState(false);
+    const [isJsonCopied, setIsJsonCopied] = useState(false);
 
     const handleEditName = () => {
         if (currentProject) {
@@ -101,23 +102,41 @@ export default function Header() {
         }
     };
 
+    const handleExportMessageJson = async () => {
+        if (!currentProject) return;
+        
+        try {
+            const json = exportToMessageJson(currentProject.systemPrompt, currentProject.messages);
+            await navigator.clipboard.writeText(json);
+            setIsJsonCopied(true);
+            setTimeout(() => setIsJsonCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to export message JSON', err);
+        }
+    };
+
+    const tooltipBaseClass = "absolute -bottom-9 left-1/2 -translate-x-1/2 px-2.5 py-1 bg-[var(--tooltip-bg)] text-[var(--tooltip-text)] text-xs rounded-md whitespace-nowrap shadow-lg pointer-events-none";
 
     return (
-        <header className="flex items-center justify-between h-14 px-4 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
-            <div className="flex items-center space-x-4">
+        <header className="flex items-center justify-between h-14 px-3 sm:px-4 border-b border-[var(--border)] bg-[var(--header-bg)] backdrop-blur-sm z-20">
+            {/* Left: Logo & Project List Toggle */}
+            <div className="flex items-center gap-2 min-w-0">
                 <button
                     onClick={toggleProjectList}
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                    className="p-2 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] active:scale-95"
                     title="项目列表"
                 >
-                    <FolderOpen size={20} className="text-gray-600 dark:text-gray-400" />
+                    <FolderOpen size={20} className="text-[var(--muted-foreground)]" />
                 </button>
-                <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-200 hidden sm:block">AI Context Editor</h1>
+                <h1 className="text-base font-semibold text-[var(--foreground)] hidden sm:block tracking-tight">
+                    AI Context Editor
+                </h1>
             </div>
 
-            <div className="flex-1 flex justify-center">
+            {/* Center: Project Name */}
+            <div className="flex-1 flex justify-center min-w-0 px-2">
                 {currentProject && (
-                    <div className="flex items-center">
+                    <div className="flex items-center min-w-0">
                         {isEditingName ? (
                             <input
                                 type="text"
@@ -125,13 +144,13 @@ export default function Header() {
                                 onChange={(e) => setEditedName(e.target.value)}
                                 onBlur={handleSaveName}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
-                                className="px-2 py-1 border border-blue-500 rounded bg-transparent text-gray-800 dark:text-gray-200 text-center w-48 focus:outline-none"
+                                className="px-3 py-1 border border-[var(--primary)] rounded-[var(--radius-sm)] bg-transparent text-[var(--foreground)] text-center w-48 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/20 text-sm"
                                 autoFocus
                             />
                         ) : (
                             <span
                                 onClick={handleEditName}
-                                className="cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 px-2 py-1 rounded text-gray-800 dark:text-gray-200 transition-colors"
+                                className="cursor-pointer hover:bg-[var(--muted)] px-3 py-1.5 rounded-[var(--radius-sm)] text-[var(--foreground)] transition-colors duration-[var(--transition-fast)] text-sm font-medium truncate max-w-[200px] lg:max-w-[300px]"
                                 title="点击修改项目名称"
                             >
                                 {currentProject.meta.name}
@@ -141,15 +160,16 @@ export default function Header() {
                 )}
             </div>
 
-            <div className="flex items-center space-x-2">
+            {/* Right: Actions */}
+            <div className="flex items-center gap-0.5 sm:gap-1">
                 {error && (
-                    <span className="text-red-500 text-sm mr-2 max-w-[200px] truncate" title={error}>
+                    <span className="text-[var(--destructive)] text-xs mr-2 max-w-[200px] truncate hidden sm:inline-block" title={error}>
                         {error}
                     </span>
                 )}
 
                 {isSaving && (
-                    <span className="text-gray-500 text-sm mr-2 animate-pulse">
+                    <span className="text-[var(--muted-foreground)] text-xs mr-2 animate-pulse hidden sm:inline-block">
                         保存中...
                     </span>
                 )}
@@ -157,23 +177,39 @@ export default function Header() {
                 <button
                     onClick={saveProject}
                     disabled={!currentProject || isSaving}
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors disabled:opacity-50"
+                    className="p-2 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
                     title="保存项目"
                 >
-                    <Save size={20} className="text-gray-600 dark:text-gray-400" />
+                    <Save size={18} className="text-[var(--muted-foreground)]" />
                 </button>
 
                 <div className="relative">
                     <button
                         onClick={handleExportXml}
                         disabled={!currentProject}
-                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors disabled:opacity-50"
+                        className="p-2 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
                         title="导出 XML 提示词到剪贴板"
                     >
-                        <Code size={20} className="text-gray-600 dark:text-gray-400" />
+                        <Code size={18} className="text-[var(--muted-foreground)]" />
                     </button>
                     {isCopied && (
-                        <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 px-2 py-1 bg-gray-800 text-white text-xs rounded whitespace-nowrap shadow-lg">
+                        <div className={`${tooltipBaseClass} animate-[fadeInUp_200ms_ease-out]`}>
+                            已复制!
+                        </div>
+                    )}
+                </div>
+
+                <div className="relative">
+                    <button
+                        onClick={handleExportMessageJson}
+                        disabled={!currentProject}
+                        className="p-2 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
+                        title="导出 Messages JSON 到剪贴板"
+                    >
+                        <FileJson size={18} className="text-[var(--muted-foreground)]" />
+                    </button>
+                    {isJsonCopied && (
+                        <div className={`${tooltipBaseClass} animate-[fadeInUp_200ms_ease-out]`}>
                             已复制!
                         </div>
                     )}
@@ -182,23 +218,25 @@ export default function Header() {
                 <button
                     onClick={handleExport}
                     disabled={!currentProject}
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors disabled:opacity-50"
+                    className="p-2 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] disabled:opacity-40 disabled:cursor-not-allowed active:scale-95"
                     title="导出 JSON"
                 >
-                    <Download size={20} className="text-gray-600 dark:text-gray-400" />
+                    <Download size={18} className="text-[var(--muted-foreground)]" />
                 </button>
 
-                <label className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors cursor-pointer" title="导入 JSON">
-                    <Upload size={20} className="text-gray-600 dark:text-gray-400" />
+                <label className="p-2 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] cursor-pointer active:scale-95" title="导入 JSON">
+                    <Upload size={18} className="text-[var(--muted-foreground)]" />
                     <input type="file" accept=".json" onChange={handleImport} className="hidden" />
                 </label>
 
+                <div className="w-px h-5 bg-[var(--border)] mx-1 hidden sm:block" />
+
                 <button
                     onClick={toggleApiConfig}
-                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                    className="p-2 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] active:scale-95"
                     title="API 设置"
                 >
-                    <Settings size={20} className="text-gray-600 dark:text-gray-400" />
+                    <Settings size={18} className="text-[var(--muted-foreground)]" />
                 </button>
             </div>
         </header>
