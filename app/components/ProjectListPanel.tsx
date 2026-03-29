@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useEditor } from '../contexts/EditorContext';
-import { Plus, Trash2, X, FolderOpen } from 'lucide-react';
+import { Plus, Trash2, X, FolderOpen, Copy } from 'lucide-react';
 
 export default function ProjectListPanel() {
     const {
@@ -37,6 +37,20 @@ export default function ProjectListPanel() {
     const handleDeleteProject = async (id: string, name: string) => {
         if (confirm(`确定要删除项目 "${name}" 吗？此操作不可撤销。`)) {
             await deleteProject(id);
+        }
+    };
+
+    const handleDuplicateProject = async (id: string) => {
+        try {
+            const res = await fetch(`/api/projects/${id}/duplicate`, { method: 'POST' });
+            if (!res.ok) {
+                const data = await res.json() as { error: string };
+                alert(data.error || '复制项目失败');
+                return;
+            }
+            await loadProjects();
+        } catch {
+            alert('复制项目失败');
         }
     };
 
@@ -134,16 +148,28 @@ export default function ProjectListPanel() {
                                             更新于: {new Date(project.updatedAt).toLocaleString()}
                                         </span>
                                     </div>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            handleDeleteProject(project.id, project.name);
-                                        }}
-                                        className={`p-1.5 text-[var(--muted-foreground)] hover:text-[var(--destructive)] rounded-[var(--radius-sm)] hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-[var(--transition-fast)] opacity-0 group-hover:opacity-100 ${isCurrent ? 'opacity-100' : ''}`}
-                                        title="删除项目"
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
+                                    <div className="flex items-center gap-0.5">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDuplicateProject(project.id);
+                                            }}
+                                            className={`p-1.5 text-[var(--muted-foreground)] hover:text-[var(--primary)] rounded-[var(--radius-sm)] hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all duration-[var(--transition-fast)] opacity-0 group-hover:opacity-100 ${isCurrent ? 'opacity-100' : ''}`}
+                                            title="复制项目"
+                                        >
+                                            <Copy size={14} />
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleDeleteProject(project.id, project.name);
+                                            }}
+                                            className={`p-1.5 text-[var(--muted-foreground)] hover:text-[var(--destructive)] rounded-[var(--radius-sm)] hover:bg-red-50 dark:hover:bg-red-900/20 transition-all duration-[var(--transition-fast)] opacity-0 group-hover:opacity-100 ${isCurrent ? 'opacity-100' : ''}`}
+                                            title="删除项目"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
                                 </li>
                             );
                         })}
