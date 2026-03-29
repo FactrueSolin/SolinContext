@@ -1,23 +1,29 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useEditor } from '../contexts/EditorContext';
+import React, { useEffect, useState } from 'react';
+import { useEditorActions, useEditorState } from '../contexts/EditorContext';
 import { FolderOpen, Save, Settings, Download, Upload, Code, FileJson } from 'lucide-react';
 import { exportToXmlPrompt, exportToMessageJson } from '../lib/utils';
 
-export default function Header() {
+function Header() {
+    const { currentProject, isSaving, error } = useEditorState();
     const {
-        state: { currentProject, isSaving, error },
         toggleProjectList,
         toggleApiConfig,
         saveProject,
-        updateProjectName,
-    } = useEditor();
+        renameProject,
+    } = useEditorActions();
 
     const [isEditingName, setIsEditingName] = useState(false);
     const [editedName, setEditedName] = useState('');
     const [isCopied, setIsCopied] = useState(false);
     const [isJsonCopied, setIsJsonCopied] = useState(false);
+
+    useEffect(() => {
+        if (!isEditingName && currentProject) {
+            setEditedName(currentProject.meta.name);
+        }
+    }, [currentProject, isEditingName]);
 
     const handleEditName = () => {
         if (currentProject) {
@@ -29,24 +35,10 @@ export default function Header() {
     const handleSaveName = async () => {
         if (currentProject && editedName.trim() && editedName !== currentProject.meta.name) {
             try {
-                const response = await fetch(`/api/projects/${currentProject.meta.id}`, {
-                    method: 'PUT',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        ...currentProject,
-                        meta: { ...currentProject.meta, name: editedName.trim() }
-                    }),
-                });
-
-                if (response.ok) {
-                    updateProjectName(editedName.trim());
-                } else {
-                    console.error('Failed to update name');
-                }
+                await renameProject(editedName.trim());
             } catch (err) {
                 console.error('Failed to save project name', err);
+                setEditedName(currentProject.meta.name);
             }
         }
         setIsEditingName(false);
@@ -140,7 +132,16 @@ export default function Header() {
                                 value={editedName}
                                 onChange={(e) => setEditedName(e.target.value)}
                                 onBlur={handleSaveName}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        void handleSaveName();
+                                    }
+                                    if (e.key === 'Escape') {
+                                        setEditedName(currentProject.meta.name);
+                                        setIsEditingName(false);
+                                    }
+                                }}
                                 className="px-3 py-1 border border-[var(--primary)] rounded-[var(--radius-sm)] bg-transparent text-[var(--foreground)] text-center w-48 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/20 text-sm"
                                 autoFocus
                             />
@@ -239,3 +240,5 @@ export default function Header() {
         </header>
     );
 }
+
+export default React.memo(Header);

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { ChevronUp, ChevronDown, Trash2, Plus, Sparkles, User, Bot } from 'lucide-react';
-import { useEditor } from '../contexts/EditorContext';
+import { useEditorActions } from '../contexts/EditorContext';
 import { EditorMessage, ContentBlock } from '../types';
 import ContentBlockEditor from './content-blocks';
 
@@ -12,8 +12,8 @@ interface MessageCardProps {
     totalCount: number;
 }
 
-export default function MessageCard({ message, index, totalCount }: MessageCardProps) {
-    const { deleteMessage, updateMessageRole, addContentBlock, moveMessage, generateForMessage } = useEditor();
+function MessageCard({ message, index, totalCount }: MessageCardProps) {
+    const { deleteMessage, updateMessageRole, addContentBlock, moveMessage, generateForMessage } = useEditorActions();
     const [showAddMenu, setShowAddMenu] = useState(false);
     const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
@@ -241,3 +241,5 @@ export default function MessageCard({ message, index, totalCount }: MessageCardP
         </div>
     );
 }
+
+export default React.memo(MessageCard);

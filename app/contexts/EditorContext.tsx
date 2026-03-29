@@ -1,6 +1,13 @@
 'use client';
 
-import React, { createContext, useContext, useReducer, useCallback, ReactNode } from 'react';
+import React, {
+    createContext,
+    useContext,
+    useReducer,
+    useCallback,
+    useMemo,
+    ReactNode,
+} from 'react';
 import type {
     ProjectMeta,
     ProjectData,
@@ -22,6 +29,31 @@ export interface EditorState {
     error: string | null;
     showApiConfig: boolean;
     showProjectList: boolean;
+}
+
+export interface EditorActions {
+    dispatch: React.Dispatch<EditorAction>;
+    loadProjects: () => Promise<void>;
+    loadProject: (id: string) => Promise<void>;
+    saveProject: () => Promise<void>;
+    createProject: (name: string) => Promise<ProjectData>;
+    deleteProject: (id: string) => Promise<void>;
+    generateForMessage: (messageId: string) => Promise<void>;
+    renameProject: (name: string) => Promise<void>;
+    toggleApiConfig: () => void;
+    toggleProjectList: () => void;
+    updateSystemPrompt: (systemPrompt: string) => void;
+    updateApiConfig: (apiConfig: Partial<ApiConfig>) => void;
+    addMessage: (role: MessageRole) => void;
+    deleteMessage: (messageId: string) => void;
+    updateMessageRole: (messageId: string, role: MessageRole) => void;
+    addContentBlock: (messageId: string, blockType: ContentBlock['type']) => void;
+    deleteContentBlock: (messageId: string, blockIndex: number) => void;
+    updateContentBlock: (messageId: string, blockIndex: number, block: ContentBlock) => void;
+    moveMessage: (messageId: string, direction: 'up' | 'down') => void;
+    setAssistantContent: (messageId: string, content: ContentBlock[]) => void;
+    updateProjectName: (name: string) => void;
+    setError: (error: string | null) => void;
 }
 
 export type EditorAction =
@@ -251,6 +283,11 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
             if (!state.currentProject) return state;
             return {
                 ...state,
+                projects: state.projects.map((project) =>
+                    project.id === state.currentProject?.meta.id
+                        ? { ...project, name: action.name }
+                        : project
+                ),
                 currentProject: {
                     ...state.currentProject,
                     meta: {
@@ -317,12 +354,8 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
     }
 }
 
-interface EditorContextType {
-    state: EditorState;
-    dispatch: React.Dispatch<EditorAction>;
-}
-
-const EditorContext = createContext<EditorContextType | undefined>(undefined);
+const EditorStateContext = createContext<EditorState | undefined>(undefined);
+const EditorActionsContext = createContext<EditorActions | undefined>(undefined);
 
 // Anthropic SSE 事件的类型定义
 interface SSEEvent {
@@ -466,21 +499,6 @@ async function consumeStreamResponse(
 export function EditorProvider({ children }: { children: ReactNode }) {
     const [state, dispatch] = useReducer(editorReducer, initialState);
 
-    return (
-        <EditorContext.Provider value={{ state, dispatch }}>
-            {children}
-        </EditorContext.Provider>
-    );
-}
-
-export function useEditor() {
-    const context = useContext(EditorContext);
-    if (!context) {
-        throw new Error('useEditor must be used within an EditorProvider');
-    }
-
-    const { state, dispatch } = context;
-
     const loadProjects = useCallback(async () => {
         dispatch({ type: 'SET_LOADING', isLoading: true });
         try {
@@ -494,7 +512,7 @@ export function useEditor() {
         } finally {
             dispatch({ type: 'SET_LOADING', isLoading: false });
         }
-    }, [dispatch]);
+    }, []);
 
     const loadProject = useCallback(async (id: string) => {
         dispatch({ type: 'SET_LOADING', isLoading: true });
@@ -509,7 +527,7 @@ export function useEditor() {
         } finally {
             dispatch({ type: 'SET_LOADING', isLoading: false });
         }
-    }, [dispatch]);
+    }, []);
 
     const saveProject = useCallback(async () => {
         if (!state.currentProject) return;
@@ -528,7 +546,7 @@ export function useEditor() {
         } finally {
             dispatch({ type: 'SET_SAVING', isSaving: false });
         }
-    }, [state.currentProject, loadProjects, dispatch]);
+    }, [state.currentProject, loadProjects]);
 
     const createProject = useCallback(async (name: string) => {
         dispatch({ type: 'SET_LOADING', isLoading: true });
@@ -549,7 +567,7 @@ export function useEditor() {
                 body: JSON.stringify({ name, apiConfig: defaultApiConfig }),
             });
             if (!res.ok) throw new Error('Failed to create project');
-            const data = await res.json();
+            const data = await res.json() as ProjectData;
             dispatch({ type: 'SET_CURRENT_PROJECT', project: data });
             dispatch({ type: 'SET_ERROR', error: null });
             await loadProjects();
@@ -560,7 +578,7 @@ export function useEditor() {
         } finally {
             dispatch({ type: 'SET_LOADING', isLoading: false });
         }
-    }, [loadProjects, dispatch]);
+    }, [loadProjects]);
 
     const deleteProject = useCallback(async (id: string) => {
         dispatch({ type: 'SET_LOADING', isLoading: true });
@@ -577,7 +595,7 @@ export function useEditor() {
         } finally {
             dispatch({ type: 'SET_LOADING', isLoading: false });
         }
-    }, [state.currentProject, loadProjects, dispatch]);
+    }, [state.currentProject, loadProjects]);
 
     const generateForMessage = useCallback(async (messageId: string) => {
         if (!state.currentProject) return;
@@ -635,46 +653,85 @@ export function useEditor() {
             }
 
             if (apiConfig.stream) {
-                // 流式模式：读取 SSE 事件并实时更新
                 await consumeStreamResponse(res, messageId, dispatch);
             } else {
-                // 非流式模式：一次性获取完整响应
                 const data: GenerateResponse = await res.json();
                 dispatch({
                     type: 'SET_ASSISTANT_CONTENT',
-                    messageId: messageId,
-                    content: data.content
+                    messageId,
+                    content: data.content,
                 });
             }
         } catch (err) {
             dispatch({ type: 'SET_ERROR', error: err instanceof Error ? err.message : String(err) });
             dispatch({
                 type: 'SET_MESSAGE_GENERATING',
-                messageId: messageId,
+                messageId,
                 isGenerating: false,
             });
         } finally {
             dispatch({ type: 'SET_GENERATING', isGenerating: false });
         }
-    }, [state.currentProject, dispatch]);
+    }, [state.currentProject]);
 
-    const toggleApiConfig = useCallback(() => dispatch({ type: 'TOGGLE_API_CONFIG' }), [dispatch]);
-    const toggleProjectList = useCallback(() => dispatch({ type: 'TOGGLE_PROJECT_LIST' }), [dispatch]);
-    const updateSystemPrompt = useCallback((systemPrompt: string) => dispatch({ type: 'UPDATE_SYSTEM_PROMPT', systemPrompt }), [dispatch]);
-    const updateApiConfig = useCallback((apiConfig: Partial<ApiConfig>) => dispatch({ type: 'UPDATE_API_CONFIG', apiConfig }), [dispatch]);
-    const addMessage = useCallback((role: MessageRole) => dispatch({ type: 'ADD_MESSAGE', role }), [dispatch]);
-    const deleteMessage = useCallback((messageId: string) => dispatch({ type: 'DELETE_MESSAGE', messageId }), [dispatch]);
-    const updateMessageRole = useCallback((messageId: string, role: MessageRole) => dispatch({ type: 'UPDATE_MESSAGE_ROLE', messageId, role }), [dispatch]);
-    const addContentBlock = useCallback((messageId: string, blockType: ContentBlock['type']) => dispatch({ type: 'ADD_CONTENT_BLOCK', messageId, blockType }), [dispatch]);
-    const deleteContentBlock = useCallback((messageId: string, blockIndex: number) => dispatch({ type: 'DELETE_CONTENT_BLOCK', messageId, blockIndex }), [dispatch]);
-    const updateContentBlock = useCallback((messageId: string, blockIndex: number, block: ContentBlock) => dispatch({ type: 'UPDATE_CONTENT_BLOCK', messageId, blockIndex, block }), [dispatch]);
-    const moveMessage = useCallback((messageId: string, direction: 'up' | 'down') => dispatch({ type: 'MOVE_MESSAGE', messageId, direction }), [dispatch]);
-    const setAssistantContent = useCallback((messageId: string, content: ContentBlock[]) => dispatch({ type: 'SET_ASSISTANT_CONTENT', messageId, content }), [dispatch]);
-    const updateProjectName = useCallback((name: string) => dispatch({ type: 'UPDATE_PROJECT_NAME', name }), [dispatch]);
-    const setError = useCallback((error: string | null) => dispatch({ type: 'SET_ERROR', error }), [dispatch]);
+    const toggleApiConfig = useCallback(() => dispatch({ type: 'TOGGLE_API_CONFIG' }), []);
+    const toggleProjectList = useCallback(() => dispatch({ type: 'TOGGLE_PROJECT_LIST' }), []);
+    const updateSystemPrompt = useCallback((systemPrompt: string) => dispatch({ type: 'UPDATE_SYSTEM_PROMPT', systemPrompt }), []);
+    const updateApiConfig = useCallback((apiConfig: Partial<ApiConfig>) => dispatch({ type: 'UPDATE_API_CONFIG', apiConfig }), []);
+    const addMessage = useCallback((role: MessageRole) => dispatch({ type: 'ADD_MESSAGE', role }), []);
+    const deleteMessage = useCallback((messageId: string) => dispatch({ type: 'DELETE_MESSAGE', messageId }), []);
+    const updateMessageRole = useCallback((messageId: string, role: MessageRole) => dispatch({ type: 'UPDATE_MESSAGE_ROLE', messageId, role }), []);
+    const addContentBlock = useCallback((messageId: string, blockType: ContentBlock['type']) => dispatch({ type: 'ADD_CONTENT_BLOCK', messageId, blockType }), []);
+    const deleteContentBlock = useCallback((messageId: string, blockIndex: number) => dispatch({ type: 'DELETE_CONTENT_BLOCK', messageId, blockIndex }), []);
+    const updateContentBlock = useCallback((messageId: string, blockIndex: number, block: ContentBlock) => dispatch({ type: 'UPDATE_CONTENT_BLOCK', messageId, blockIndex, block }), []);
+    const moveMessage = useCallback((messageId: string, direction: 'up' | 'down') => dispatch({ type: 'MOVE_MESSAGE', messageId, direction }), []);
+    const setAssistantContent = useCallback((messageId: string, content: ContentBlock[]) => dispatch({ type: 'SET_ASSISTANT_CONTENT', messageId, content }), []);
+    const updateProjectName = useCallback((name: string) => dispatch({ type: 'UPDATE_PROJECT_NAME', name }), []);
+    const setError = useCallback((error: string | null) => dispatch({ type: 'SET_ERROR', error }), []);
 
-    return {
-        state,
+    const renameProject = useCallback(async (name: string) => {
+        const normalizedName = name.trim();
+        if (!state.currentProject || !normalizedName || normalizedName === state.currentProject.meta.name) {
+            return;
+        }
+
+        const previousName = state.currentProject.meta.name;
+        const updatedProject: ProjectData = {
+            ...state.currentProject,
+            meta: {
+                ...state.currentProject.meta,
+                name: normalizedName,
+            },
+        };
+
+        dispatch({ type: 'UPDATE_PROJECT_NAME', name: normalizedName });
+        dispatch({ type: 'SET_SAVING', isSaving: true });
+
+        try {
+            const response = await fetch(`/api/projects/${state.currentProject.meta.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(updatedProject),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to update project name');
+            }
+
+            dispatch({ type: 'SET_ERROR', error: null });
+            await loadProjects();
+        } catch (err) {
+            dispatch({ type: 'UPDATE_PROJECT_NAME', name: previousName });
+            dispatch({ type: 'SET_ERROR', error: err instanceof Error ? err.message : String(err) });
+            throw err;
+        } finally {
+            dispatch({ type: 'SET_SAVING', isSaving: false });
+        }
+    }, [state.currentProject, loadProjects]);
+
+    const actions = useMemo<EditorActions>(() => ({
         dispatch,
         loadProjects,
         loadProject,
@@ -682,6 +739,7 @@ export function useEditor() {
         createProject,
         deleteProject,
         generateForMessage,
+        renameProject,
         toggleApiConfig,
         toggleProjectList,
         updateSystemPrompt,
@@ -696,5 +754,63 @@ export function useEditor() {
         setAssistantContent,
         updateProjectName,
         setError,
+    }), [
+        loadProjects,
+        loadProject,
+        saveProject,
+        createProject,
+        deleteProject,
+        generateForMessage,
+        renameProject,
+        toggleApiConfig,
+        toggleProjectList,
+        updateSystemPrompt,
+        updateApiConfig,
+        addMessage,
+        deleteMessage,
+        updateMessageRole,
+        addContentBlock,
+        deleteContentBlock,
+        updateContentBlock,
+        moveMessage,
+        setAssistantContent,
+        updateProjectName,
+        setError,
+    ]);
+
+    return (
+        <EditorStateContext.Provider value={state}>
+            <EditorActionsContext.Provider value={actions}>
+                {children}
+            </EditorActionsContext.Provider>
+        </EditorStateContext.Provider>
+    );
+}
+
+export function useEditorState() {
+    const state = useContext(EditorStateContext);
+    if (!state) {
+        throw new Error('useEditorState must be used within an EditorProvider');
+    }
+
+    return state;
+}
+
+export function useEditorActions() {
+    const actions = useContext(EditorActionsContext);
+    if (!actions) {
+        throw new Error('useEditorActions must be used within an EditorProvider');
+    }
+
+    return actions;
+}
+
+export function useEditor() {
+    const state = useEditorState();
+    const actions = useEditorActions();
+
+    return {
+        state,
+        ...actions,
     };
 }

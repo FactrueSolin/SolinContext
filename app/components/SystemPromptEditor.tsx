@@ -1,16 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useEditor } from '../contexts/EditorContext';
+import { useEditorActions, useEditorState } from '../contexts/EditorContext';
 import { ChevronDown, ChevronRight, Terminal, Eye, Pencil } from 'lucide-react';
 import AutoResizeTextarea from './ui/AutoResizeTextarea';
 import MarkdownPreview from './ui/MarkdownPreview';
 
-export default function SystemPromptEditor() {
-    const {
-        state: { currentProject },
-        updateSystemPrompt,
-    } = useEditor();
+function SystemPromptEditor() {
+    const { currentProject } = useEditorState();
+    const { updateSystemPrompt } = useEditorActions();
 
     const [isExpanded, setIsExpanded] = useState(true);
     const [isPreview, setIsPreview] = useState(false);
@@ -75,3 +73,5 @@ export default function SystemPromptEditor() {
         </div>
     );
 }
+
+export default React.memo(SystemPromptEditor);

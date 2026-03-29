@@ -152,4 +152,15 @@ describe('editorReducer', () => {
         expect(state.currentProject?.messages[0].content).toEqual(newContent);
         expect(state.currentProject?.messages[0].isGenerating).toBe(false);
     });
+
+    it('should handle UPDATE_PROJECT_NAME for current project and project list', () => {
+        const action: EditorAction = { type: 'UPDATE_PROJECT_NAME', name: 'Renamed Project' };
+        const state = editorReducer({
+            ...stateWithProject,
+            projects: [mockProject.meta],
+        }, action);
+
+        expect(state.currentProject?.meta.name).toBe('Renamed Project');
+        expect(state.projects[0]?.name).toBe('Renamed Project');
+    });
 });

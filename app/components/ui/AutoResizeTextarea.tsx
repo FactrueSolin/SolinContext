@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useLayoutEffect, useCallback } from 'react';
 
 interface AutoResizeTextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
     /** 最小高度，默认 80px */
@@ -10,23 +10,39 @@ interface AutoResizeTextareaProps extends React.TextareaHTMLAttributes<HTMLTextA
 const AutoResizeTextarea = React.forwardRef<HTMLTextAreaElement, AutoResizeTextareaProps>(
     ({ minHeight = 80, value, className = '', style, ...rest }, forwardedRef) => {
         const internalRef = useRef<HTMLTextAreaElement>(null);
+        const previousValueRef = useRef<string>('');
         // 使用 forwardedRef 或 internalRef
         const textareaRef = forwardedRef || internalRef;
 
         const adjustHeight = useCallback(() => {
             const textarea = 'current' in textareaRef ? textareaRef.current : textareaRef;
             if (!textarea) return;
-            textarea.style.height = 'auto';
-            textarea.style.height = `${Math.max(textarea.scrollHeight, minHeight)}px`;
+
+            const nextValue = typeof value === 'string' ? value : '';
+            const previousValue = previousValueRef.current;
+            const isShrinking = nextValue.length < previousValue.length;
+
+            if (isShrinking) {
+                textarea.style.height = 'auto';
+            }
+
+            const nextHeight = Math.max(textarea.scrollHeight, minHeight);
+            const currentHeight = Number.parseFloat(textarea.style.height || '0');
+
+            if (isShrinking || nextHeight > currentHeight) {
+                textarea.style.height = `${nextHeight}px`;
+            }
+
+            previousValueRef.current = nextValue;
         }, [textareaRef, minHeight]);
 
         // 内容变化时调整高度
-        useEffect(() => {
+        useLayoutEffect(() => {
             adjustHeight();
         }, [value, adjustHeight]);
 
         // 初始渲染时设置高度
-        useEffect(() => {
+        useLayoutEffect(() => {
             adjustHeight();
             // eslint-disable-next-line react-hooks/exhaustive-deps
         }, []);

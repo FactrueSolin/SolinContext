@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Trash2 } from 'lucide-react';
-import { useEditor } from '../../contexts/EditorContext';
+import { useEditorActions } from '../../contexts/EditorContext';
 import { ContentBlock } from '../../types';
 
 import TextBlockEditor from './TextBlockEditor';
@@ -26,13 +26,12 @@ interface ContentBlockEditorProps {
     totalBlocks: number;
 }
 
-export default function ContentBlockEditor({
+function ContentBlockEditor({
     block,
     messageId,
     blockIndex,
 }: ContentBlockEditorProps) {
-    const { updateContentBlock, deleteContentBlock } = useEditor();
-    const [isHovered, setIsHovered] = useState(false);
+    const { updateContentBlock, deleteContentBlock } = useEditorActions();
 
     const handleUpdate = (updatedBlock: ContentBlock) => {
         updateContentBlock(messageId, blockIndex, updatedBlock);
@@ -144,8 +143,6 @@ export default function ContentBlockEditor({
     return (
         <div
             className="relative group rounded-[var(--radius-md)] p-2 transition-all duration-[var(--transition-fast)] border border-transparent hover:border-[var(--border)] hover:bg-[var(--card-bg)]/50"
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
         >
             <div className="flex items-start gap-2">
                 <div className="flex-1 min-w-0">
@@ -165,3 +162,5 @@ export default function ContentBlockEditor({
         </div>
     );
 }
+
+export default React.memo(ContentBlockEditor);

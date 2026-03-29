@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useRef, useEffect } from 'react';
-import { useEditor } from '../contexts/EditorContext';
+import { useEditorState } from '../contexts/EditorContext';
 import MessageCard from './MessageCard';
 
-export default function MessageList() {
-    const { state: { currentProject } } = useEditor();
+function MessageList() {
+    const { currentProject } = useEditorState();
     const listEndRef = useRef<HTMLDivElement>(null);
 
     // Auto-scroll to bottom when new messages are added
@@ -43,3 +43,5 @@ export default function MessageList() {
         </div>
     );
 }
+
+export default React.memo(MessageList);

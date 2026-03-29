@@ -11,7 +11,7 @@ interface TextBlockEditorProps {
     onUpdate: (block: TextBlock) => void;
 }
 
-export default function TextBlockEditor({ block, onUpdate }: TextBlockEditorProps) {
+function TextBlockEditor({ block, onUpdate }: TextBlockEditorProps) {
     const [isPreview, setIsPreview] = useState(false);
 
     return (
@@ -43,3 +43,5 @@ export default function TextBlockEditor({ block, onUpdate }: TextBlockEditorProp
         </div>
     );
 }
+
+export default React.memo(TextBlockEditor);

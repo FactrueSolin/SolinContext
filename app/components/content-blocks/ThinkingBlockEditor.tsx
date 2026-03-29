@@ -9,7 +9,7 @@ interface ThinkingBlockEditorProps {
     onUpdate: (block: ThinkingBlock) => void;
 }
 
-export default function ThinkingBlockEditor({ block, onUpdate }: ThinkingBlockEditorProps) {
+function ThinkingBlockEditor({ block, onUpdate }: ThinkingBlockEditorProps) {
     return (
         <div className="flex flex-col gap-3 bg-purple-50/40 dark:bg-purple-900/10 p-3 rounded-[var(--radius-md)] border border-purple-200/60 dark:border-purple-800/30">
             <span className="text-[11px] font-semibold text-purple-600 dark:text-purple-400 uppercase tracking-wider">Thinking</span>
@@ -36,3 +36,5 @@ export default function ThinkingBlockEditor({ block, onUpdate }: ThinkingBlockEd
         </div>
     );
 }
+
+export default React.memo(ThinkingBlockEditor);
