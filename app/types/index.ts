@@ -184,6 +184,14 @@ export interface ApiConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  temperature?: number;      // 0-1, 控制随机性
+  topP?: number;             // 0-1, 核采样
+  topK?: number;             // 正整数, Top-K 采样
+  maxTokens?: number;        // 正整数, 最大输出 token 数
+  stopSequences?: string[];  // 停止序列
+  stream?: boolean;          // 流式输出
+  thinking?: boolean;        // 思考模式（extended thinking）
+  thinkingBudget?: number;   // 思考 token 预算，默认 10000
 }
 
 // 项目元数据
@@ -212,6 +220,14 @@ export interface GenerateRequest {
     role: MessageRole;
     content: ContentBlock[];
   }>;
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  maxTokens?: number;
+  stopSequences?: string[];
+  stream?: boolean;
+  thinking?: boolean;
+  thinkingBudget?: number;
 }
 
 // API生成响应体

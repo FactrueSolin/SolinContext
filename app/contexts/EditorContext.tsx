@@ -43,7 +43,10 @@ export type EditorAction =
     | { type: 'UPDATE_CONTENT_BLOCK'; messageId: string; blockIndex: number; block: ContentBlock }
     | { type: 'MOVE_MESSAGE'; messageId: string; direction: 'up' | 'down' }
     | { type: 'SET_ASSISTANT_CONTENT'; messageId: string; content: ContentBlock[] }
-    | { type: 'UPDATE_PROJECT_NAME'; name: string };
+    | { type: 'UPDATE_PROJECT_NAME'; name: string }
+    | { type: 'APPEND_TO_CONTENT_BLOCK'; messageId: string; blockIndex: number; text: string }
+    | { type: 'SET_MESSAGE_CONTENT'; messageId: string; content: ContentBlock[] }
+    | { type: 'SET_MESSAGE_GENERATING'; messageId: string; isGenerating: boolean };
 
 export const initialState: EditorState = {
     projects: [],
@@ -256,6 +259,59 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
                     },
                 },
             };
+        case 'APPEND_TO_CONTENT_BLOCK':
+            if (!state.currentProject) return state;
+            return {
+                ...state,
+                currentProject: {
+                    ...state.currentProject,
+                    messages: state.currentProject.messages.map((m) => {
+                        if (m.id !== action.messageId) return m;
+                        const newContent = [...m.content];
+                        if (action.blockIndex < newContent.length) {
+                            const block = newContent[action.blockIndex];
+                            if (block.type === 'text') {
+                                newContent[action.blockIndex] = {
+                                    ...block,
+                                    text: block.text + action.text,
+                                };
+                            } else if (block.type === 'thinking') {
+                                newContent[action.blockIndex] = {
+                                    ...block,
+                                    thinking: block.thinking + action.text,
+                                };
+                            }
+                        }
+                        return { ...m, content: newContent };
+                    }),
+                },
+            };
+        case 'SET_MESSAGE_CONTENT':
+            if (!state.currentProject) return state;
+            return {
+                ...state,
+                currentProject: {
+                    ...state.currentProject,
+                    messages: state.currentProject.messages.map((m) =>
+                        m.id === action.messageId
+                            ? { ...m, content: action.content }
+                            : m
+                    ),
+                },
+            };
+        case 'SET_MESSAGE_GENERATING':
+            if (!state.currentProject) return state;
+            return {
+                ...state,
+                currentProject: {
+                    ...state.currentProject,
+                    messages: state.currentProject.messages.map((m) =>
+                        m.id === action.messageId
+                            ? { ...m, isGenerating: action.isGenerating }
+                            : m
+                    ),
+                },
+            };
         default:
             return state;
     }
@@ -267,6 +323,145 @@ interface EditorContextType {
 }
 
 const EditorContext = createContext<EditorContextType | undefined>(undefined);
+
+// Anthropic SSE 事件的类型定义
+interface SSEEvent {
+    type: string;
+    index?: number;
+    content_block?: {
+        type: string;
+        text?: string;
+        thinking?: string;
+        id?: string;
+        name?: string;
+    };
+    delta?: {
+        type: string;
+        text?: string;
+        thinking?: string;
+        stop_reason?: string;
+    };
+    message?: {
+        stop_reason: string;
+        usage: { input_tokens: number; output_tokens: number };
+    };
+}
+
+/**
+ * 消费流式 SSE 响应，实时更新消息内容
+ */
+async function consumeStreamResponse(
+    res: Response,
+    messageId: string,
+    dispatch: React.Dispatch<EditorAction>
+): Promise<void> {
+    if (!res.body) {
+        throw new Error('Response body is null');
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let currentBlockIndex = -1;
+
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // 按双换行分割 SSE 事件
+            const events = buffer.split('\n\n');
+            buffer = events.pop() || '';
+
+            for (const eventStr of events) {
+                const lines = eventStr.split('\n');
+                let eventData: string | null = null;
+
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    if (trimmedLine.startsWith('data: ')) {
+                        eventData = trimmedLine.slice(6);
+                    }
+                }
+
+                if (!eventData) continue;
+
+                let event: SSEEvent;
+                try {
+                    event = JSON.parse(eventData) as SSEEvent;
+                } catch {
+                    continue;
+                }
+
+                switch (event.type) {
+                    case 'content_block_start': {
+                        if (event.content_block && event.index !== undefined) {
+                            currentBlockIndex = event.index;
+                            const blockType = event.content_block.type;
+
+                            if (blockType === 'text') {
+                                dispatch({
+                                    type: 'ADD_CONTENT_BLOCK',
+                                    messageId,
+                                    blockType: 'text',
+                                });
+                            } else if (blockType === 'thinking') {
+                                dispatch({
+                                    type: 'ADD_CONTENT_BLOCK',
+                                    messageId,
+                                    blockType: 'thinking',
+                                });
+                            }
+                        }
+                        break;
+                    }
+                    case 'content_block_delta': {
+                        if (event.delta && event.index !== undefined) {
+                            currentBlockIndex = event.index;
+                            if (event.delta.type === 'text_delta' && event.delta.text) {
+                                dispatch({
+                                    type: 'APPEND_TO_CONTENT_BLOCK',
+                                    messageId,
+                                    blockIndex: currentBlockIndex,
+                                    text: event.delta.text,
+                                });
+                            } else if (event.delta.type === 'thinking_delta' && event.delta.thinking) {
+                                dispatch({
+                                    type: 'APPEND_TO_CONTENT_BLOCK',
+                                    messageId,
+                                    blockIndex: currentBlockIndex,
+                                    text: event.delta.thinking,
+                                });
+                            }
+                        }
+                        break;
+                    }
+                    case 'content_block_stop': {
+                        // 内容块结束，无需特殊处理
+                        break;
+                    }
+                    case 'message_stop': {
+                        // 消息结束
+                        break;
+                    }
+                    default:
+                        // 忽略其他事件类型（message_start, message_delta 等）
+                        break;
+                }
+            }
+        }
+    } finally {
+        reader.releaseLock();
+        // 标记生成完成
+        dispatch({
+            type: 'SET_MESSAGE_GENERATING',
+            messageId,
+            isGenerating: false,
+        });
+    }
+}
 
 export function EditorProvider({ children }: { children: ReactNode }) {
     const [state, dispatch] = useReducer(editorReducer, initialState);
@@ -408,15 +603,24 @@ export function useEditor() {
         try {
             const previousMessages = state.currentProject.messages.slice(0, messageIndex);
 
+            const apiConfig = state.currentProject.apiConfig;
             const request: GenerateRequest = {
-                baseUrl: state.currentProject.apiConfig.baseUrl,
-                apiKey: state.currentProject.apiConfig.apiKey,
-                model: state.currentProject.apiConfig.model,
+                baseUrl: apiConfig.baseUrl,
+                apiKey: apiConfig.apiKey,
+                model: apiConfig.model,
                 systemPrompt: state.currentProject.systemPrompt,
                 messages: previousMessages.map((m) => ({
                     role: m.role,
                     content: m.content,
                 })),
+                temperature: apiConfig.temperature,
+                topP: apiConfig.topP,
+                topK: apiConfig.topK,
+                maxTokens: apiConfig.maxTokens,
+                stopSequences: apiConfig.stopSequences,
+                stream: apiConfig.stream,
+                thinking: apiConfig.thinking,
+                thinkingBudget: apiConfig.thinkingBudget,
             };
 
             const res = await fetch('/api/generate', {
@@ -426,27 +630,28 @@ export function useEditor() {
             });
 
             if (!res.ok) {
-                const errorData = await res.json().catch(() => ({}));
+                const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
                 throw new Error(errorData.error || 'Failed to generate message');
             }
 
-            const data: GenerateResponse = await res.json();
-
-            dispatch({
-                type: 'SET_ASSISTANT_CONTENT',
-                messageId: messageId,
-                content: data.content
-            });
+            if (apiConfig.stream) {
+                // 流式模式：读取 SSE 事件并实时更新
+                await consumeStreamResponse(res, messageId, dispatch);
+            } else {
+                // 非流式模式：一次性获取完整响应
+                const data: GenerateResponse = await res.json();
+                dispatch({
+                    type: 'SET_ASSISTANT_CONTENT',
+                    messageId: messageId,
+                    content: data.content
+                });
+            }
         } catch (err) {
             dispatch({ type: 'SET_ERROR', error: err instanceof Error ? err.message : String(err) });
             dispatch({
-                type: 'SET_CURRENT_PROJECT',
-                project: {
-                    ...state.currentProject,
-                    messages: state.currentProject.messages.map((m) =>
-                        m.id === messageId ? { ...m, isGenerating: false } : m
-                    ),
-                },
+                type: 'SET_MESSAGE_GENERATING',
+                messageId: messageId,
+                isGenerating: false,
             });
         } finally {
             dispatch({ type: 'SET_GENERATING', isGenerating: false });
