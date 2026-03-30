@@ -6,12 +6,14 @@ import React, {
     useReducer,
     useCallback,
     useMemo,
+    useRef,
     ReactNode,
 } from 'react';
 import type {
     ProjectMeta,
     ProjectData,
     ApiConfig,
+    CompareApiConfig,
     MessageRole,
     ContentBlock,
     EditorMessage,
@@ -39,11 +41,15 @@ export interface EditorActions {
     createProject: (name: string) => Promise<ProjectData>;
     deleteProject: (id: string) => Promise<void>;
     generateForMessage: (messageId: string) => Promise<void>;
+    generateABCompare: (messageId: string) => Promise<void>;
+    stopGeneration: (messageId: string) => void;
+    resolveABCompare: (keepMessageId: string, abGroupId: string) => void;
     renameProject: (name: string) => Promise<void>;
     toggleApiConfig: () => void;
     toggleProjectList: () => void;
     updateSystemPrompt: (systemPrompt: string) => void;
     updateApiConfig: (apiConfig: Partial<ApiConfig>) => void;
+    updateCompareModel: (compareModel: CompareApiConfig | undefined) => void;
     addMessage: (role: MessageRole) => void;
     deleteMessage: (messageId: string) => void;
     updateMessageRole: (messageId: string, role: MessageRole) => void;
@@ -78,7 +84,10 @@ export type EditorAction =
     | { type: 'UPDATE_PROJECT_NAME'; name: string }
     | { type: 'APPEND_TO_CONTENT_BLOCK'; messageId: string; blockIndex: number; text: string }
     | { type: 'SET_MESSAGE_CONTENT'; messageId: string; content: ContentBlock[] }
-    | { type: 'SET_MESSAGE_GENERATING'; messageId: string; isGenerating: boolean };
+    | { type: 'SET_MESSAGE_GENERATING'; messageId: string; isGenerating: boolean }
+    | { type: 'ADD_MESSAGES'; messages: EditorMessage[] }
+    | { type: 'UPDATE_COMPARE_MODEL'; compareModel: CompareApiConfig | undefined }
+    | { type: 'RESOLVE_AB_COMPARE'; keepMessageId: string; abGroupId: string };
 
 export const initialState: EditorState = {
     projects: [],
@@ -349,6 +358,60 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
                     ),
                 },
             };
+        case 'ADD_MESSAGES':
+            if (!state.currentProject) return state;
+            return {
+                ...state,
+                currentProject: {
+                    ...state.currentProject,
+                    messages: [...state.currentProject.messages, ...action.messages],
+                },
+            };
+        case 'UPDATE_COMPARE_MODEL': {
+            if (!state.currentProject) return state;
+            const newApiConfig = { ...state.currentProject.apiConfig, compareModel: action.compareModel };
+            try {
+                localStorage.setItem('aicontext_api_config', JSON.stringify(newApiConfig));
+            } catch (e) {
+                console.error('Failed to save API config to localStorage', e);
+            }
+            return {
+                ...state,
+                currentProject: {
+                    ...state.currentProject,
+                    apiConfig: newApiConfig,
+                },
+            };
+        }
+        case 'RESOLVE_AB_COMPARE': {
+            if (!state.currentProject) return state;
+            // 删除同组中不是 keepMessageId 的消息，并清除保留消息的 abGroupId 和 abLabel
+            const filteredMessages = state.currentProject.messages.filter(
+                (m) => {
+                    // 保留不在同组的消息
+                    if (m.abGroupId !== action.abGroupId) return true;
+                    // 保留被选中的消息
+                    if (m.id === action.keepMessageId) return true;
+                    // 删除同组的其他消息
+                    return false;
+                }
+            ).map((m) => {
+                // 清除保留消息的 abGroupId 和 abLabel
+                if (m.id === action.keepMessageId) {
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                    const { abGroupId, abLabel, ...rest } = m;
+                    return rest;
+                }
+                return m;
+            });
+            return {
+                ...state,
+                currentProject: {
+                    ...state.currentProject,
+                    messages: filteredMessages,
+                },
+            };
+        }
         default:
             return state;
     }
@@ -386,7 +449,8 @@ interface SSEEvent {
 async function consumeStreamResponse(
     res: Response,
     messageId: string,
-    dispatch: React.Dispatch<EditorAction>
+    dispatch: React.Dispatch<EditorAction>,
+    signal?: AbortSignal
 ): Promise<void> {
     if (!res.body) {
         throw new Error('Response body is null');
@@ -399,8 +463,15 @@ async function consumeStreamResponse(
 
     try {
         while (true) {
+            // 检查是否已中断
+            if (signal?.aborted) {
+                break;
+            }
             const { done, value } = await reader.read();
             if (done) break;
+            if (signal?.aborted) {
+                break;
+            }
 
             buffer += decoder.decode(value, { stream: true });
 
@@ -498,6 +569,8 @@ async function consumeStreamResponse(
 
 export function EditorProvider({ children }: { children: ReactNode }) {
     const [state, dispatch] = useReducer(editorReducer, initialState);
+    // 存储 AbortController 引用，key 为 messageId
+    const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
     const loadProjects = useCallback(async () => {
         dispatch({ type: 'SET_LOADING', isLoading: true });
@@ -618,6 +691,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SET_CURRENT_PROJECT', project: updatedProject });
         dispatch({ type: 'SET_ERROR', error: null });
 
+        // 创建 AbortController
+        const controller = new AbortController();
+        abortControllersRef.current.set(messageId, controller);
+
         try {
             const previousMessages = state.currentProject.messages.slice(0, messageIndex);
 
@@ -645,6 +722,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(request),
+                signal: controller.signal,
             });
 
             if (!res.ok) {
@@ -653,7 +731,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
             }
 
             if (apiConfig.stream) {
-                await consumeStreamResponse(res, messageId, dispatch);
+                await consumeStreamResponse(res, messageId, dispatch, controller.signal);
             } else {
                 const data: GenerateResponse = await res.json();
                 dispatch({
@@ -663,21 +741,200 @@ export function EditorProvider({ children }: { children: ReactNode }) {
                 });
             }
         } catch (err) {
-            dispatch({ type: 'SET_ERROR', error: err instanceof Error ? err.message : String(err) });
+            if (err instanceof DOMException && err.name === 'AbortError') {
+                // 用户主动中断，不视为错误
+            } else {
+                dispatch({ type: 'SET_ERROR', error: err instanceof Error ? err.message : String(err) });
+            }
             dispatch({
                 type: 'SET_MESSAGE_GENERATING',
                 messageId,
                 isGenerating: false,
             });
         } finally {
+            abortControllersRef.current.delete(messageId);
             dispatch({ type: 'SET_GENERATING', isGenerating: false });
         }
     }, [state.currentProject]);
+
+    const generateABCompare = useCallback(async (messageId: string) => {
+        if (!state.currentProject) return;
+
+        const apiConfig = state.currentProject.apiConfig;
+        const compareModel = apiConfig.compareModel;
+
+        // 校验：对比模型必须已配置
+        if (!compareModel || !compareModel.apiKey) {
+            dispatch({ type: 'SET_ERROR', error: '请先配置对比模型' });
+            return;
+        }
+
+        dispatch({ type: 'SET_GENERATING', isGenerating: true });
+
+        const messageIndex = state.currentProject.messages.findIndex(
+            (m) => m.id === messageId
+        );
+        if (messageIndex === -1) {
+            dispatch({ type: 'SET_GENERATING', isGenerating: false });
+            return;
+        }
+
+        // 清空目标 assistant 消息内容
+        const clearedMessages = state.currentProject.messages.map((m) =>
+            m.id === messageId ? { ...m, isGenerating: true, content: [] } : m
+        );
+
+        // 创建对比消息 B
+        const groupId = generateId();
+        const messageB: EditorMessage = {
+            id: generateId(),
+            role: 'assistant',
+            content: [],
+            isGenerating: true,
+            abGroupId: groupId,
+            abLabel: 'B',
+        };
+
+        // 标记目标消息为 A
+        const updatedMessages = clearedMessages.map((m) =>
+            m.id === messageId
+                ? { ...m, abGroupId: groupId, abLabel: 'A' }
+                : m
+        );
+
+        // 在目标消息之后插入消息 B
+        const targetIdx = updatedMessages.findIndex((m) => m.id === messageId);
+        const newMessages = [...updatedMessages];
+        newMessages.splice(targetIdx + 1, 0, messageB);
+
+        const updatedProject = {
+            ...state.currentProject,
+            messages: newMessages,
+        };
+
+        dispatch({ type: 'SET_CURRENT_PROJECT', project: updatedProject });
+        dispatch({ type: 'SET_ERROR', error: null });
+
+        // 创建 AbortController（A/B 对比共享一个 controller）
+        const controller = new AbortController();
+        abortControllersRef.current.set(messageId, controller);
+        abortControllersRef.current.set(messageB.id, controller);
+
+        // 构建上下文消息（目标消息之前的所有消息）
+        const previousMessages = state.currentProject.messages.slice(0, messageIndex);
+        const contextMessages = previousMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+        }));
+
+        // 构建两个请求
+        const baseRequest = {
+            systemPrompt: state.currentProject.systemPrompt,
+            messages: contextMessages,
+            temperature: apiConfig.temperature,
+            topP: apiConfig.topP,
+            topK: apiConfig.topK,
+            maxTokens: apiConfig.maxTokens,
+            stopSequences: apiConfig.stopSequences,
+            stream: apiConfig.stream,
+            thinking: apiConfig.thinking,
+            thinkingBudget: apiConfig.thinkingBudget,
+        };
+
+        const requestA: GenerateRequest = {
+            ...baseRequest,
+            baseUrl: apiConfig.baseUrl,
+            apiKey: apiConfig.apiKey,
+            model: apiConfig.model,
+        };
+
+        const requestB: GenerateRequest = {
+            ...baseRequest,
+            baseUrl: compareModel.baseUrl,
+            apiKey: compareModel.apiKey,
+            model: compareModel.model,
+        };
+
+        try {
+            // 并行发起两个请求
+            const [resA, resB] = await Promise.all([
+                fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestA),
+                    signal: controller.signal,
+                }),
+                fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestB),
+                    signal: controller.signal,
+                }),
+            ]);
+
+            // 检查响应状态
+            if (!resA.ok) {
+                const errData = await resA.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error(`模型A生成失败: ${errData.error || 'Unknown error'}`);
+            }
+            if (!resB.ok) {
+                const errData = await resB.json().catch(() => ({ error: 'Unknown error' }));
+                throw new Error(`模型B生成失败: ${errData.error || 'Unknown error'}`);
+            }
+
+            if (apiConfig.stream) {
+                // 并行消费两个流
+                await Promise.all([
+                    consumeStreamResponse(resA, messageId, dispatch, controller.signal),
+                    consumeStreamResponse(resB, messageB.id, dispatch, controller.signal),
+                ]);
+            } else {
+                // 并行解析两个非流式响应
+                const [dataA, dataB]: [GenerateResponse, GenerateResponse] = await Promise.all([
+                    resA.json() as Promise<GenerateResponse>,
+                    resB.json() as Promise<GenerateResponse>,
+                ]);
+
+                dispatch({ type: 'SET_ASSISTANT_CONTENT', messageId, content: dataA.content });
+                dispatch({ type: 'SET_ASSISTANT_CONTENT', messageId: messageB.id, content: dataB.content });
+            }
+        } catch (err) {
+            if (err instanceof DOMException && err.name === 'AbortError') {
+                // 用户主动中断，不视为错误
+            } else {
+                dispatch({
+                    type: 'SET_ERROR',
+                    error: err instanceof Error ? err.message : String(err),
+                });
+            }
+            // 标记两个消息都停止生成
+            dispatch({ type: 'SET_MESSAGE_GENERATING', messageId, isGenerating: false });
+            dispatch({ type: 'SET_MESSAGE_GENERATING', messageId: messageB.id, isGenerating: false });
+        } finally {
+            abortControllersRef.current.delete(messageId);
+            abortControllersRef.current.delete(messageB.id);
+            dispatch({ type: 'SET_GENERATING', isGenerating: false });
+        }
+    }, [state.currentProject]);
+
+    const stopGeneration = useCallback((messageId: string) => {
+        const controller = abortControllersRef.current.get(messageId);
+        if (controller) {
+            controller.abort();
+            abortControllersRef.current.delete(messageId);
+        }
+        dispatch({ type: 'SET_MESSAGE_GENERATING', messageId, isGenerating: false });
+    }, []);
+
+    const resolveABCompare = useCallback((keepMessageId: string, abGroupId: string) => {
+        dispatch({ type: 'RESOLVE_AB_COMPARE', keepMessageId, abGroupId });
+    }, []);
 
     const toggleApiConfig = useCallback(() => dispatch({ type: 'TOGGLE_API_CONFIG' }), []);
     const toggleProjectList = useCallback(() => dispatch({ type: 'TOGGLE_PROJECT_LIST' }), []);
     const updateSystemPrompt = useCallback((systemPrompt: string) => dispatch({ type: 'UPDATE_SYSTEM_PROMPT', systemPrompt }), []);
     const updateApiConfig = useCallback((apiConfig: Partial<ApiConfig>) => dispatch({ type: 'UPDATE_API_CONFIG', apiConfig }), []);
+    const updateCompareModel = useCallback((compareModel: CompareApiConfig | undefined) => dispatch({ type: 'UPDATE_COMPARE_MODEL', compareModel }), []);
     const addMessage = useCallback((role: MessageRole) => dispatch({ type: 'ADD_MESSAGE', role }), []);
     const deleteMessage = useCallback((messageId: string) => dispatch({ type: 'DELETE_MESSAGE', messageId }), []);
     const updateMessageRole = useCallback((messageId: string, role: MessageRole) => dispatch({ type: 'UPDATE_MESSAGE_ROLE', messageId, role }), []);
@@ -739,11 +996,15 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         createProject,
         deleteProject,
         generateForMessage,
+        generateABCompare,
+        stopGeneration,
+        resolveABCompare,
         renameProject,
         toggleApiConfig,
         toggleProjectList,
         updateSystemPrompt,
         updateApiConfig,
+        updateCompareModel,
         addMessage,
         deleteMessage,
         updateMessageRole,
@@ -761,11 +1022,15 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         createProject,
         deleteProject,
         generateForMessage,
+        generateABCompare,
+        stopGeneration,
+        resolveABCompare,
         renameProject,
         toggleApiConfig,
         toggleProjectList,
         updateSystemPrompt,
         updateApiConfig,
+        updateCompareModel,
         addMessage,
         deleteMessage,
         updateMessageRole,

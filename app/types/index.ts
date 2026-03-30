@@ -178,6 +178,17 @@ export interface EditorMessage {
   content: ContentBlock[];
   // 是否正在AI生成中
   isGenerating?: boolean;
+  /** A/B 对比分组 ID — 同一组对比的消息共享此 ID */
+  abGroupId?: string;
+  /** A/B 对比中的标签，如 "A" 或 "B" */
+  abLabel?: string;
+}
+
+/** 对比模型配置 — 只需核心字段，高级参数继承默认模型配置 */
+export interface CompareApiConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
 }
 
 export interface ApiConfig {
@@ -192,6 +203,15 @@ export interface ApiConfig {
   stream?: boolean;          // 流式输出
   thinking?: boolean;        // 思考模式（extended thinking）
   thinkingBudget?: number;   // 思考 token 预算，默认 10000
+  /** 对比模型配置（可选） */
+  compareModel?: CompareApiConfig;
+}
+
+/** A/B 对比分组信息 */
+export interface ABCompareGroup {
+  groupId: string;
+  messageA: EditorMessage;  // 默认模型生成的消息
+  messageB: EditorMessage;  // 对比模型生成的消息
 }
 
 // 项目元数据

@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronUp, ChevronDown, Trash2, Plus, Sparkles, User, Bot } from 'lucide-react';
-import { useEditorActions } from '../contexts/EditorContext';
+import { ChevronUp, ChevronDown, Trash2, Plus, Sparkles, User, Bot, GitCompare, CheckCircle, Square } from 'lucide-react';
+import { useEditorActions, useEditorState } from '../contexts/EditorContext';
 import { EditorMessage, ContentBlock } from '../types';
 import ContentBlockEditor from './content-blocks';
 
@@ -13,7 +13,9 @@ interface MessageCardProps {
 }
 
 function MessageCard({ message, index, totalCount }: MessageCardProps) {
-    const { deleteMessage, updateMessageRole, addContentBlock, moveMessage, generateForMessage } = useEditorActions();
+    const { deleteMessage, updateMessageRole, addContentBlock, moveMessage, generateForMessage, generateABCompare, stopGeneration, resolveABCompare } = useEditorActions();
+    const { currentProject } = useEditorState();
+    const hasCompareModel = !!(currentProject?.apiConfig.compareModel?.apiKey);
     const [showAddMenu, setShowAddMenu] = useState(false);
     const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
@@ -78,6 +80,34 @@ function MessageCard({ message, index, totalCount }: MessageCardProps) {
                         {message.role}
                     </span>
 
+                    {/* A/B 对比标签 — 显示实际模型名 */}
+                    {message.abLabel && (
+                        <span
+                            className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 max-w-[160px] truncate"
+                            title={message.abLabel === 'A'
+                                ? currentProject?.apiConfig.model
+                                : currentProject?.apiConfig.compareModel?.model
+                            }
+                        >
+                            {message.abLabel === 'A'
+                                ? (currentProject?.apiConfig.model || '模型 A')
+                                : (currentProject?.apiConfig.compareModel?.model || '模型 B')
+                            }
+                        </span>
+                    )}
+
+                    {/* 保留此条按钮（仅 A/B 对比且非生成中显示） */}
+                    {message.abGroupId && !message.isGenerating && (
+                        <button
+                            onClick={() => resolveABCompare(message.id, message.abGroupId!)}
+                            className="p-0.5 flex items-center gap-1 rounded-[var(--radius-sm)] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-100/80 dark:text-emerald-400 dark:hover:text-emerald-300 dark:hover:bg-emerald-900/30 transition-all duration-[var(--transition-fast)] active:scale-95"
+                            title="保留此条，删除另一条"
+                        >
+                            <CheckCircle size={14} />
+                            <span className="text-[10px] font-medium">保留</span>
+                        </button>
+                    )}
+
                     <select
                         value={message.role}
                         onChange={(e) => updateMessageRole(message.id, e.target.value as 'user' | 'assistant')}
@@ -96,18 +126,38 @@ function MessageCard({ message, index, totalCount }: MessageCardProps) {
                 </div>
 
                 <div className="flex items-center gap-0.5">
-                    {!isUser && (
+                    {!isUser && message.isGenerating && (
+                        <button
+                            onClick={() => stopGeneration(message.id)}
+                            className="p-1.5 flex items-center gap-1 rounded-[var(--radius-sm)] text-red-500 hover:text-red-600 hover:bg-red-100/80 dark:text-red-400 dark:hover:text-red-300 dark:hover:bg-red-900/30 transition-all duration-[var(--transition-fast)] active:scale-95"
+                            title="停止生成"
+                        >
+                            <Square size={15} />
+                        </button>
+                    )}
+                    {!isUser && !message.isGenerating && (
                         <button
                             onClick={() => generateForMessage(message.id)}
+                            className="p-1.5 flex items-center gap-1 rounded-[var(--radius-sm)] text-purple-600 hover:text-purple-700 hover:bg-purple-100/80 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/30 transition-all duration-[var(--transition-fast)] active:scale-95"
+                            title="生成回复"
+                        >
+                            <Sparkles size={15} />
+                        </button>
+                    )}
+
+                    {/* A/B 对比生成按钮 */}
+                    {!isUser && hasCompareModel && (
+                        <button
+                            onClick={() => generateABCompare(message.id)}
                             disabled={message.isGenerating}
                             className={`p-1.5 flex items-center gap-1 rounded-[var(--radius-sm)] transition-all duration-[var(--transition-fast)] ${
                                 message.isGenerating
                                     ? 'text-[var(--muted-foreground)] cursor-not-allowed opacity-40'
-                                    : 'text-purple-600 hover:text-purple-700 hover:bg-purple-100/80 dark:text-purple-400 dark:hover:text-purple-300 dark:hover:bg-purple-900/30 active:scale-95'
+                                    : 'text-orange-600 hover:text-orange-700 hover:bg-orange-100/80 dark:text-orange-400 dark:hover:text-orange-300 dark:hover:bg-orange-900/30 active:scale-95'
                             }`}
-                            title="生成回复"
+                            title="A/B 对比生成"
                         >
-                            <Sparkles size={15} />
+                            <GitCompare size={15} />
                         </button>
                     )}
 

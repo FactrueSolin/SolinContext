@@ -2,17 +2,20 @@
 
 import React, { useState } from 'react';
 import { useEditor } from '../contexts/EditorContext';
-import { X, Eye, EyeOff, Settings, ChevronDown, ChevronRight } from 'lucide-react';
+import { X, Eye, EyeOff, Settings, ChevronDown, ChevronRight, GitCompare } from 'lucide-react';
 
 export default function ApiConfigPanel() {
     const {
         state: { currentProject, showApiConfig },
         toggleApiConfig,
         updateApiConfig,
+        updateCompareModel,
     } = useEditor();
 
     const [showApiKey, setShowApiKey] = useState(false);
     const [showAdvanced, setShowAdvanced] = useState(false);
+    const [showCompareModel, setShowCompareModel] = useState(false);
+    const [showCompareApiKey, setShowCompareApiKey] = useState(false);
     const [stopInput, setStopInput] = useState('');
 
     if (!showApiConfig || !currentProject) return null;
@@ -471,6 +474,102 @@ export default function ApiConfigPanel() {
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* 对比模型折叠区域 */}
+                <div className="border border-[var(--border)] rounded-[var(--radius-sm)] overflow-hidden">
+                    <button
+                        type="button"
+                        onClick={() => setShowCompareModel(!showCompareModel)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 text-xs font-medium text-[var(--muted-foreground)] hover:bg-[var(--muted)]/50 transition-colors"
+                    >
+                        <div className="flex items-center gap-2">
+                            {showCompareModel ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            <GitCompare size={14} />
+                            对比模型（A/B 测试）
+                        </div>
+                        <span
+                            className={`inline-flex items-center px-2 py-0.5 text-[10px] font-medium rounded-full ${
+                                apiConfig.compareModel
+                                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+                                    : 'bg-[var(--muted)] text-[var(--muted-foreground)]'
+                            }`}
+                        >
+                            {apiConfig.compareModel ? '已配置' : '未配置'}
+                        </span>
+                    </button>
+
+                    {showCompareModel && (
+                        <div className="px-3 pb-3 space-y-3 border-t border-[var(--border)] pt-3">
+                            {/* Base URL */}
+                            <div>
+                                <label className={labelClass}>Base URL</label>
+                                <input
+                                    type="text"
+                                    value={apiConfig.compareModel?.baseUrl ?? ''}
+                                    onChange={(e) => updateCompareModel({
+                                        baseUrl: e.target.value,
+                                        apiKey: apiConfig.compareModel?.apiKey ?? '',
+                                        model: apiConfig.compareModel?.model ?? '',
+                                    })}
+                                    placeholder={apiConfig.baseUrl}
+                                    className={inputClass}
+                                />
+                            </div>
+
+                            {/* API Key */}
+                            <div>
+                                <label className={labelClass}>API Key</label>
+                                <div className="relative">
+                                    <input
+                                        type={showCompareApiKey ? 'text' : 'password'}
+                                        value={apiConfig.compareModel?.apiKey ?? ''}
+                                        onChange={(e) => updateCompareModel({
+                                            baseUrl: apiConfig.compareModel?.baseUrl ?? '',
+                                            apiKey: e.target.value,
+                                            model: apiConfig.compareModel?.model ?? '',
+                                        })}
+                                        placeholder="对比模型 API Key"
+                                        className={`${inputClass} pr-9`}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowCompareApiKey(!showCompareApiKey)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                                    >
+                                        {showCompareApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Model */}
+                            <div>
+                                <label className={labelClass}>Model</label>
+                                <input
+                                    type="text"
+                                    value={apiConfig.compareModel?.model ?? ''}
+                                    onChange={(e) => updateCompareModel({
+                                        baseUrl: apiConfig.compareModel?.baseUrl ?? '',
+                                        apiKey: apiConfig.compareModel?.apiKey ?? '',
+                                        model: e.target.value,
+                                    })}
+                                    placeholder={apiConfig.model}
+                                    className={inputClass}
+                                />
+                            </div>
+
+                            {/* 清除按钮 */}
+                            {apiConfig.compareModel && (
+                                <button
+                                    type="button"
+                                    onClick={() => updateCompareModel(undefined)}
+                                    className="w-full px-3 py-2 text-xs text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-[var(--radius-sm)] hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                >
+                                    清除对比模型配置
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>
