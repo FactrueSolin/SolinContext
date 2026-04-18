@@ -1,5 +1,9 @@
 # 提示词资产管理架构设计
 
+## 补充说明
+
+数据库详细设计见 [prompt-asset-database-design.md](/var/tmp/vibe-kanban/worktrees/fe0f-/aicontext/docs/prompt-asset-database-design.md)。
+
 ## 1. 背景
 
 当前项目的核心能力是编辑 `Project`：
