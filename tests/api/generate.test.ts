@@ -1,10 +1,28 @@
-import { describe, it, expect, vi, beforeEach, afterEach, Mock } from 'vitest';
-import { NextRequest } from 'next/server';
+import { afterEach, beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
-// Need to mock fetch before importing the route
-const originalFetch = global.fetch;
+function createGenerateRequest(body: unknown) {
+    return new Request('http://localhost/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+}
+
+function createSseStream(chunks: string[]) {
+    const encoder = new TextEncoder();
+
+    return new ReadableStream({
+        start(controller) {
+            for (const chunk of chunks) {
+                controller.enqueue(encoder.encode(chunk));
+            }
+            controller.close();
+        },
+    });
+}
 
 describe('Generate API', () => {
+    const originalFetch = global.fetch;
     let mockFetch: Mock;
 
     beforeEach(() => {
@@ -17,109 +35,217 @@ describe('Generate API', () => {
         global.fetch = originalFetch;
     });
 
-    it('should return 400 when missing apiKey', async () => {
+    it('POST /api/generate returns 400 when apiKey is missing', async () => {
         const { POST } = await import('../../app/api/generate/route');
 
-        const requestObj = {
-            json: async () => ({
+        const response = await POST(
+            createGenerateRequest({
                 baseUrl: 'https://api.anthropic.com/v1',
                 model: 'claude-3-5-sonnet-20241022',
-                messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }]
-            })
-        };
-
-        const request = requestObj as unknown as NextRequest;
-
-        const response = await POST(request);
+                messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+            }),
+        );
 
         expect(response.status).toBe(400);
-        const data = await response.json();
-        expect(data.error).toBe('API key is required');
+        await expect(response.json()).resolves.toEqual({ error: 'API key is required' });
+        expect(mockFetch).not.toHaveBeenCalled();
     });
 
-    it('should forward request to anthropic API successfully', async () => {
+    it('POST /api/generate forwards a standard non-stream request to Anthropic', async () => {
         const { POST } = await import('../../app/api/generate/route');
-
-        // Mock the successful response from Anthropic
-        const mockAnthropicResponse = {
-            id: 'msg_123',
-            type: 'message',
-            role: 'assistant',
-            content: [{ type: 'text', text: 'Hello there!' }],
-            model: 'claude-3-5-sonnet-20241022',
-            stop_reason: 'end_turn',
-            stop_sequence: null,
-            usage: { input_tokens: 10, output_tokens: 5 }
-        };
 
         mockFetch.mockResolvedValueOnce({
             ok: true,
-            json: async () => mockAnthropicResponse
+            json: async () => ({
+                content: [
+                    { type: 'text', text: 'Hello there!' },
+                    { type: 'thinking', thinking: 'internal reasoning', signature: 'sig-1' },
+                    { type: 'redacted_thinking' },
+                ],
+                stop_reason: 'end_turn',
+                usage: { input_tokens: 10, output_tokens: 5 },
+            }),
         });
 
-        const requestObj = {
-            json: async () => ({
-                baseUrl: 'https://api.anthropic.com/v1',
+        const response = await POST(
+            createGenerateRequest({
+                baseUrl: 'https://api.anthropic.com///',
                 apiKey: 'sk-ant-test-key',
-                model: 'claude-3-5-sonnet-20241022',
-                messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }]
-            })
-        };
-
-        const request = requestObj as unknown as NextRequest;
-        const response = await POST(request);
+                model: 'claude-sonnet-4-20250514',
+                systemPrompt: 'Be precise',
+                temperature: 0.2,
+                topP: 0.9,
+                topK: 12,
+                stopSequences: ['</answer>'],
+                messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+            }),
+        );
+        const data = await response.json();
 
         expect(response.status).toBe(200);
-
-        // Check that fetch was called correctly
         expect(mockFetch).toHaveBeenCalledTimes(1);
-        expect(mockFetch.mock.calls[0][0]).toBe('https://api.anthropic.com/v1/v1/messages');
+        expect(mockFetch.mock.calls[0][0]).toBe('https://api.anthropic.com/v1/messages');
 
         const fetchOptions = mockFetch.mock.calls[0][1];
         expect(fetchOptions.method).toBe('POST');
         expect(fetchOptions.headers['x-api-key']).toBe('sk-ant-test-key');
         expect(fetchOptions.headers['anthropic-version']).toBe('2023-06-01');
-        expect(fetchOptions.headers['content-type'] || fetchOptions.headers['Content-Type']).toBe('application/json');
+        expect(fetchOptions.headers['Content-Type']).toBe('application/json');
 
         const fetchBody = JSON.parse(fetchOptions.body);
-        expect(fetchBody.model).toBe('claude-3-5-sonnet-20241022');
-        expect(fetchBody.messages).toEqual([{ role: 'user', content: [{ type: 'text', text: 'hello' }] }]);
+        expect(fetchBody).toEqual({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 16000,
+            system: 'Be precise',
+            temperature: 0.2,
+            top_p: 0.9,
+            top_k: 12,
+            stop_sequences: ['</answer>'],
+            messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+        });
 
-        // Check the response
-        const data = await response.json();
-        expect(data.content).toEqual([{ type: 'text', text: 'Hello there!' }]);
+        expect(data).toEqual({
+            content: [
+                { type: 'text', text: 'Hello there!' },
+                { type: 'thinking', thinking: 'internal reasoning', signature: 'sig-1' },
+                { type: 'redacted_thinking', data: '' },
+            ],
+            stopReason: 'end_turn',
+            usage: { inputTokens: 10, outputTokens: 5 },
+        });
     });
 
-    it('should handle anthropic API errors correctly', async () => {
+    it('POST /api/generate builds thinking-mode requests without sampling params', async () => {
         const { POST } = await import('../../app/api/generate/route');
 
-        const errorResponse = {
-            error: {
-                type: 'invalid_request_error',
-                message: 'Invalid API key'
-            }
-        };
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({
+                content: [{ type: 'text', text: 'done' }],
+                stop_reason: 'end_turn',
+                usage: { input_tokens: 1, output_tokens: 1 },
+            }),
+        });
+
+        const response = await POST(
+            createGenerateRequest({
+                baseUrl: 'https://api.anthropic.com',
+                apiKey: 'sk-ant-test-key',
+                model: 'claude-3-5-sonnet-20241022',
+                thinking: true,
+                thinkingBudget: 2048,
+                temperature: 0.7,
+                topP: 0.8,
+                topK: 10,
+                messages: [{ role: 'user', content: [{ type: 'text', text: 'think' }] }],
+            }),
+        );
+
+        expect(response.status).toBe(200);
+
+        const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+        expect(fetchBody.max_tokens).toBe(8192);
+        expect(fetchBody.thinking).toEqual({ type: 'enabled', budget_tokens: 2048 });
+        expect(fetchBody.temperature).toBeUndefined();
+        expect(fetchBody.top_p).toBeUndefined();
+        expect(fetchBody.top_k).toBeUndefined();
+    });
+
+    it('POST /api/generate returns upstream API errors with original status', async () => {
+        const { POST } = await import('../../app/api/generate/route');
 
         mockFetch.mockResolvedValueOnce({
             ok: false,
             status: 401,
-            text: async () => JSON.stringify(errorResponse)
+            text: async () => JSON.stringify({
+                error: {
+                    type: 'invalid_request_error',
+                    message: 'Invalid API key',
+                },
+            }),
         });
 
-        const requestObj = {
-            json: async () => ({
+        const response = await POST(
+            createGenerateRequest({
                 baseUrl: 'https://api.anthropic.com/v1',
                 apiKey: 'invalid-key',
                 model: 'claude-3-5-sonnet-20241022',
-                messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }]
-            })
-        };
-
-        const request = requestObj as unknown as NextRequest;
-        const response = await POST(request);
+                messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+            }),
+        );
 
         expect(response.status).toBe(401);
         const data = await response.json();
         expect(data.error).toContain('Invalid API key');
+    });
+
+    it('POST /api/generate returns 500 when fetch throws', async () => {
+        const { POST } = await import('../../app/api/generate/route');
+
+        mockFetch.mockRejectedValueOnce(new Error('Network unreachable'));
+
+        const response = await POST(
+            createGenerateRequest({
+                baseUrl: 'https://api.anthropic.com/v1',
+                apiKey: 'sk-ant-test-key',
+                model: 'claude-3-5-sonnet-20241022',
+                messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+            }),
+        );
+
+        expect(response.status).toBe(500);
+        await expect(response.json()).resolves.toEqual({ error: 'Network unreachable' });
+    });
+
+    it('POST /api/generate streams SSE events and drops invalid injected lines', async () => {
+        const { POST } = await import('../../app/api/generate/route');
+
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            body: createSseStream([
+                'event: content_block_start\n',
+                'data: {"type":"content_block_start","index":0}\n',
+                'data: not-json\n',
+                '\n',
+                'event: message_stop\n',
+                'data: {"type":"message_stop"}\n\n',
+            ]),
+        });
+
+        const response = await POST(
+            createGenerateRequest({
+                baseUrl: 'https://api.anthropic.com',
+                apiKey: 'sk-ant-test-key',
+                model: 'claude-sonnet-4-20250514',
+                stream: true,
+                messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+            }),
+        );
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get('Content-Type')).toBe('text/event-stream');
+
+        const text = await response.text();
+        expect(text).toContain('event: content_block_start');
+        expect(text).toContain('data: {"type":"content_block_start","index":0}');
+        expect(text).toContain('event: message_stop');
+        expect(text).toContain('data: {"type":"message_stop"}');
+        expect(text).not.toContain('data: not-json');
+    });
+
+    it('POST /api/generate returns 500 when request JSON is malformed', async () => {
+        const { POST } = await import('../../app/api/generate/route');
+        const malformedRequest = new Request('http://localhost/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: '{"apiKey":',
+        });
+
+        const response = await POST(malformedRequest);
+        const data = await response.json();
+
+        expect(response.status).toBe(500);
+        expect(data.error).toContain('JSON');
+        expect(mockFetch).not.toHaveBeenCalled();
     });
 });

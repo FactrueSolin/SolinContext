@@ -1,18 +1,21 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NextRequest } from 'next/server';
-import { ProjectStore } from '../../app/lib/project-store';
-import { createNewProject } from '../../app/lib/utils';
-import { ProjectData } from '../../app/types';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// 模拟ProjectStore
-vi.mock('../../app/lib/project-store', () => {
-    return {
-        ProjectStore: {
-            listProjects: vi.fn(),
-            saveProject: vi.fn(),
-        }
-    };
-});
+import { ProjectStore } from '../../app/lib/project-store';
+
+vi.mock('../../app/lib/project-store', () => ({
+    ProjectStore: {
+        listProjects: vi.fn(),
+        saveProject: vi.fn(),
+    },
+}));
+
+function createJsonRequest(body: unknown) {
+    return new Request('http://localhost/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+    });
+}
 
 describe('Projects API', () => {
     beforeEach(() => {
@@ -20,7 +23,7 @@ describe('Projects API', () => {
     });
 
     describe('GET /api/projects', () => {
-        it('should list projects correctly', async () => {
+        it('returns project summaries from ProjectStore', async () => {
             const { GET } = await import('../../app/api/projects/route');
             const mockProjects = [
                 { id: '1', name: 'Proj1', createdAt: '2023', updatedAt: '2023' },
@@ -32,97 +35,99 @@ describe('Projects API', () => {
             const response = await GET();
 
             expect(response.status).toBe(200);
-            const data = await response.json();
-            expect(data).toEqual(mockProjects);
+            await expect(response.json()).resolves.toEqual(mockProjects);
             expect(ProjectStore.listProjects).toHaveBeenCalledTimes(1);
         });
 
-        it('should handle list errors correctly', async () => {
+        it('returns 500 when ProjectStore.listProjects throws', async () => {
             const { GET } = await import('../../app/api/projects/route');
+
             vi.mocked(ProjectStore.listProjects).mockRejectedValue(new Error('List error'));
 
             const response = await GET();
 
             expect(response.status).toBe(500);
-            const data = await response.json();
-            expect(data.error).toBe('List error');
+            await expect(response.json()).resolves.toEqual({ error: 'List error' });
         });
     });
 
     describe('POST /api/projects', () => {
-        it('should create a new project with name', async () => {
+        it('creates a new project and persists it', async () => {
             const { POST } = await import('../../app/api/projects/route');
-            const reqObj = {
-                json: async () => ({ name: 'Test Project' })
-            };
-            const request = reqObj as unknown as NextRequest;
 
             vi.mocked(ProjectStore.saveProject).mockResolvedValue();
 
-            const response = await POST(request);
-
-            expect(response.status).toBe(201);
+            const response = await POST(createJsonRequest({ name: 'Test Project' }));
             const data = await response.json();
 
+            expect(response.status).toBe(201);
             expect(data.meta.name).toBe('Test Project');
+            expect(data.apiConfig).toEqual({
+                baseUrl: 'https://api.anthropic.com',
+                apiKey: '',
+                model: 'claude-sonnet-4-20250514',
+            });
             expect(ProjectStore.saveProject).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(ProjectStore.saveProject).mock.calls[0][0].meta.name).toBe('Test Project');
         });
 
-        it('should apply apiConfig if provided', async () => {
+        it('uses the provided apiConfig when present', async () => {
             const { POST } = await import('../../app/api/projects/route');
             const customApiConfig = {
-                baseUrl: 'custom',
+                baseUrl: 'https://proxy.example.com',
                 apiKey: 'key',
                 model: 'model',
             };
-            const reqObj = {
-                json: async () => ({
-                    name: 'Test Project',
-                    apiConfig: customApiConfig
-                })
-            };
-            const request = reqObj as unknown as NextRequest;
 
             vi.mocked(ProjectStore.saveProject).mockResolvedValue();
 
-            const response = await POST(request);
+            const response = await POST(
+                createJsonRequest({
+                    name: 'Test Project',
+                    apiConfig: customApiConfig,
+                }),
+            );
+            const data = await response.json();
 
             expect(response.status).toBe(201);
-            const data = await response.json();
-
             expect(data.apiConfig).toEqual(customApiConfig);
-            expect(ProjectStore.saveProject).toHaveBeenCalledTimes(1);
         });
 
-        it('should return 400 when name is missing', async () => {
+        it('returns 400 when name is missing', async () => {
             const { POST } = await import('../../app/api/projects/route');
-            const reqObj = {
-                json: async () => ({ apiConfig: {} })
-            };
-            const request = reqObj as unknown as NextRequest;
 
-            const response = await POST(request);
+            const response = await POST(createJsonRequest({ apiConfig: {} }));
 
             expect(response.status).toBe(400);
-            const data = await response.json();
-            expect(data.error).toBe('Project name is required');
+            await expect(response.json()).resolves.toEqual({ error: 'Project name is required' });
             expect(ProjectStore.saveProject).not.toHaveBeenCalled();
         });
 
-        it('should handle save errors correctly', async () => {
+        it('returns 500 when request body is invalid JSON', async () => {
             const { POST } = await import('../../app/api/projects/route');
-            const reqObj = {
-                json: async () => ({ name: 'Test' })
-            };
-            const request = reqObj as unknown as NextRequest;
+            const malformedRequest = new Request('http://localhost/api/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{"name":',
+            });
 
-            vi.mocked(ProjectStore.saveProject).mockRejectedValue(new Error('Save error'));
-
-            const response = await POST(request);
+            const response = await POST(malformedRequest);
+            const data = await response.json();
 
             expect(response.status).toBe(500);
-            const data = await response.json();
-            expect(data.error).toBe('Save error');
+            expect(data.error).toContain('JSON');
+            expect(ProjectStore.saveProject).not.toHaveBeenCalled();
+        });
+
+        it('returns 500 when ProjectStore.saveProject rejects suspicious payloads', async () => {
+            const { POST } = await import('../../app/api/projects/route');
+
+            vi.mocked(ProjectStore.saveProject).mockRejectedValue(new Error('Unsafe project name'));
+
+            const response = await POST(createJsonRequest({ name: '" OR 1=1 --' }));
+
+            expect(response.status).toBe(500);
+            await expect(response.json()).resolves.toEqual({ error: 'Unsafe project name' });
         });
     });
 });
