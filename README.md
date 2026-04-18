@@ -17,7 +17,7 @@ pnpm dev
 docker compose up -d --build
 ```
 
-构建缓存会持久化到项目根目录下的 `.docker-cache/`，用于复用 `apt`、`pnpm` 以及 BuildKit 的构建结果，从而加快后续镜像构建。
+默认会使用 Docker/BuildKit 的常规构建缓存。
 
 默认会创建一个名为 `aicontext-data` 的 Docker volume，并挂载到容器内的 `/app/data`。项目数据和 SQLite 数据库都会持久化到这个 volume 中。
 
@@ -40,7 +40,7 @@ docker run -d \
   aicontext
 ```
 
-如果希望在手动 `docker build` 时也复用本地缓存，建议使用 BuildKit：
+如果希望在手动 `docker build` 时额外把缓存持久化到项目根目录下的 `.docker-cache/`，建议使用 `docker buildx build`：
 
 ```bash
 docker buildx build \
