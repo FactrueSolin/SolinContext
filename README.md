@@ -1,36 +1,53 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Context
 
-## Getting Started
-
-First, run the development server:
+## Local Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+默认会把项目数据和提示词资产数据库写入 `./data`。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Docker Deployment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### docker compose
 
-## Learn More
+```bash
+docker compose up -d --build
+```
 
-To learn more about Next.js, take a look at the following resources:
+默认会创建一个名为 `aicontext-data` 的 Docker volume，并挂载到容器内的 `/app/data`。项目数据和 SQLite 数据库都会持久化到这个 volume 中。
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+停止服务但保留数据：
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+docker compose down
+```
 
-## Deploy on Vercel
+如果执行 `docker compose down -v`，会同时删除持久化数据卷。
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### docker run
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+docker build -t aicontext .
+docker run -d \
+  --name aicontext \
+  -p 3000:3000 \
+  -v aicontext-data:/app/data \
+  aicontext
+```
+
+## Runtime Data Paths
+
+- `DATA_DIR`：项目数据目录，默认是 `/app/data`（Docker）或 `./data`（本地）。
+- `PROMPT_ASSET_DB_PATH`：提示词资产 SQLite 数据库文件路径，默认是 `${DATA_DIR}/app.db`。
+
+如果你需要把数据直接写到宿主机目录，也可以把 volume 改成 bind mount，例如：
+
+```yaml
+services:
+  app:
+    volumes:
+      - ./data:/app/data
+```

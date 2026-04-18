@@ -1,8 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { ProjectData, ProjectMeta, HistoryEntry } from '../types';
-
-const DATA_DIR = path.join(process.cwd(), 'data');
+import { getDataDir } from './runtime-paths';
 
 // 确保目录存在
 async function ensureDir(dir: string): Promise<void> {
@@ -11,7 +10,7 @@ async function ensureDir(dir: string): Promise<void> {
 
 // 获取项目目录路径
 function getProjectDir(projectId: string): string {
-    return path.join(DATA_DIR, projectId);
+    return path.join(getDataDir(), projectId);
 }
 
 // 获取项目数据文件路径
@@ -27,8 +26,9 @@ function getHistoryDir(projectId: string): string {
 export class ProjectStore {
     // 列出所有项目的元数据
     static async listProjects(): Promise<ProjectMeta[]> {
-        await ensureDir(DATA_DIR);
-        const entries = await fs.readdir(DATA_DIR, { withFileTypes: true });
+        const dataDir = getDataDir();
+        await ensureDir(dataDir);
+        const entries = await fs.readdir(dataDir, { withFileTypes: true });
         const metas: ProjectMeta[] = [];
 
         for (const entry of entries) {

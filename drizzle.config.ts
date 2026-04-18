@@ -5,6 +5,6 @@ export default defineConfig({
     schema: './app/lib/db/schema/prompt-assets.ts',
     out: './app/lib/db/migrations',
     dbCredentials: {
-        url: './data/app.db',
+        url: process.env.PROMPT_ASSET_DB_PATH ?? './data/app.db',
     },
 });

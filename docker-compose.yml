@@ -4,7 +4,13 @@ services:
       context: .
     environment:
       NODE_ENV: production
+      DATA_DIR: /app/data
+      PROMPT_ASSET_DB_PATH: /app/data/app.db
     ports:
       - "43000:3000"
+    restart: unless-stopped
     volumes:
-      - ./data:/app/data
+      - aicontext-data:/app/data
+
+volumes:
+  aicontext-data:
