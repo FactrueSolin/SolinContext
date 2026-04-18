@@ -1,593 +1,744 @@
-# 提示词资产管理架构设计
+# 提示词资产管理 UX 方案
 
 ## 补充说明
 
-- 后端技术规范见 [prompt-asset-backend-spec.md](./prompt-asset-backend-spec.md)
-- 数据库详细设计见 [prompt-asset-database-design.md](./prompt-asset-database-design.md)
+- 后端技术规范见 [prompt-asset-backend-spec.md](./prompt-asset-backend-spec.md)。
+- 数据库详细设计见 [prompt-asset-database-design.md](./prompt-asset-database-design.md)。
 
-## 1. 背景
+## 1. 文档定位
 
-当前项目的核心能力是编辑 `Project`：
+本文档定义 `AI Context Editor` 中“提示词资产管理”能力的用户体验方案，重点回答四个问题：
 
-- 前端通过 `EditorContext` 管理当前项目状态
-- 后端通过 `app/api/projects/**` 暴露 Route Handler
-- 数据持久化由 `ProjectStore` 写入文件系统
-- 项目历史通过 `data/<projectId>/history/*.json` 快照实现
+1. 用户为什么需要提示词资产库。
+2. 这项能力应该放在当前产品的哪里。
+3. 用户如何完成“保存、查找、应用、回滚”这些高频任务。
+4. 前端实现时，哪些交互约束需要先被固定。
 
-这套机制适合“单个项目编辑”，但不适合“跨项目复用的提示词资产库”，原因有三点：
+本文档以当前产品形态为前提：
 
-1. 文件快照难以做结构化查询，比如按名称搜索、按更新时间排序、按版本号回滚。
-2. 提示词资产与项目是两个不同的领域对象，不应该强耦合在 `project.json` 里。
-3. 你希望尝试 `SQLite + Drizzle ORM`，版本化数据正适合关系型建模和事务处理。
+- 当前主工作区围绕单个 `Project` 展开。
+- `System Prompt` 是最核心、最高频的编辑对象。
+- 产品尚未进入“多团队、多角色、复杂治理”阶段。
 
-## 2. 目标与范围
+因此本期设计目标不是做一个独立的“Prompt CMS”，而是在不打断当前编辑流程的前提下，为 `systemPrompt` 增加可复用、可版本化、可检索的资产能力。
 
-### 2.1 功能目标
+## 2. 设计结论
 
-新增一个“提示词资产”子系统，用于保存常用提示词，并支持：
+### 2.1 方案摘要
+
+第一阶段采用“**快捷入口 + 右侧资产抽屉**”的组合方案：
+
+- `Header` 增加“提示词资产库”入口，用于完整管理。
+- `SystemPromptEditor` 增加“从资产应用”“保存为资产”两个高频快捷动作。
+- 资产管理主界面使用右侧 Drawer，而不是单独跳转新页面。
+- 资产详情与版本历史都在 Drawer 内完成，尽量不打断当前项目编辑上下文。
+
+### 2.2 为什么不是独立页面
+
+独立页面更适合重运营、重治理的资产中心，但当前产品的真实工作流是：
+
+- 先在项目中编辑 prompt。
+- 再决定是否沉淀成资产。
+- 或从已有资产中挑一个，应用到当前项目。
+
+如果拆成全页，用户每次“找资产 -> 对比 -> 应用 -> 回到项目”都要切上下文，成本偏高。Drawer 更适合“边查边用”的使用方式。
+
+### 2.3 本期产品定位
+
+提示词资产管理在第一阶段承担三个角色：
+
+- 复用库：减少重复手写 system prompt。
+- 安全网：提供版本历史与回滚能力。
+- 轻量治理：通过名称、描述、更新时间、版本号建立基本秩序。
+
+本期不承担以下角色：
+
+- 团队协作中心
+- 审批流与权限系统
+- 标签体系、文件夹体系、分享体系
+- 跨项目自动同步更新
+
+## 3. 用户与场景
+
+## 3.1 目标用户
+
+### 用户 A：高频写 Prompt 的操作者
+
+特征：
+
+- 经常新建项目。
+- 有一批重复使用的 prompt 模板。
+- 更在意“快”和“可复用”。
+
+核心诉求：
+
+- 快速找到可用资产。
+- 一键应用到当前 `System Prompt`。
+- 在项目内改完后能顺手保存成新版本。
+
+### 用户 B：维护标准 Prompt 的沉淀者
+
+特征：
+
+- 会迭代少量关键提示词。
+- 需要知道哪个版本是当前稳定版。
+- 需要保留历史并支持回滚。
+
+核心诉求：
+
+- 明确版本链。
+- 看得懂每次修改了什么。
+- 避免误覆盖。
+
+## 3.2 核心任务
+
+本期只围绕 6 个任务设计，不扩张：
+
+1. 浏览资产列表
+2. 搜索并筛选资产
+3. 预览资产当前版本
+4. 应用资产到当前项目 `System Prompt`
+5. 将当前 `System Prompt` 保存为资产
+6. 查看历史版本并恢复为新版本
+
+## 4. UX 目标与设计原则
+
+## 4.1 UX 目标
+
+- **低切换成本**：不要迫使用户离开当前项目编辑上下文。
+- **高可判读性**：用户要快速分清“当前项目内容”和“资产库内容”。
+- **显式版本心智**：任何保存都应明确告诉用户是否会生成新版本。
+- **降低误操作**：应用、覆盖、回滚都需要有足够清晰的预期。
+
+## 4.2 设计原则
+
+### 原则 A：资产是“来源”，项目是“工作副本”
+
+应用资产后，当前项目的 `System Prompt` 会被更新，但不会自动反向改写资产。用户必须显式执行“保存为资产”或“保存为新版本”。
+
+这条原则必须在 UI 文案中持续强调，否则用户会误以为自己正在“在线编辑资产”。
+
+### 原则 B：高频任务前置，低频治理后置
+
+首页不需要展示完整资产治理能力，但必须在高频路径上提供：
+
+- 从资产应用
+- 保存为资产
+
+历史版本、归档、恢复这些动作放在资产 Drawer 深一层处理。
+
+### 原则 C：版本是显式动作，不是自动副作用
+
+只要会产生新版本，就必须由用户点击明确动作触发，比如：
+
+- `保存为资产`
+- `保存为新版本`
+- `恢复为当前版本`
+
+不采用“输入即自动生成版本”的策略，避免版本噪音。
+
+## 5. 信息架构
+
+## 5.1 对象关系
+
+系统中有两个容易混淆的对象：
+
+### Project
+
+- 承载当前编辑上下文
+- 有自己的 `systemPrompt`
+- 可以引用某个资产内容，但不是资产本身
+
+### Prompt Asset
+
+- 承载跨项目复用的提示词模板
+- 有独立名称、描述、版本历史
+- 可以被多个项目重复应用
+
+对应的用户心智表达：
+
+> 资产库像模板仓库，项目里的 system prompt 像当前工作稿。
+
+## 5.2 导航结构
+
+```text
+Header
+  └─ 提示词资产库入口
+
+Project Workspace
+  └─ System Prompt Editor
+      ├─ 从资产应用
+      └─ 保存为资产
+
+Prompt Asset Drawer
+  ├─ 列表态
+  ├─ 详情态
+  ├─ 编辑态
+  ├─ 历史版本态
+  └─ 新建 / 保存弹窗
+```
+
+## 5.3 入口设计
+
+### 入口 1：Header 入口
+
+位置：
+
+- 与项目列表、导出、设置同级
+
+作用：
+
+- 进入完整资产管理能力
+- 支持浏览、搜索、筛选、查看详情、查看历史、创建、编辑、归档
+
+适用场景：
+
+- 用户主动管理资产库
+- 用户不确定该用哪个资产，需要先浏览
+
+### 入口 2：System Prompt 快捷入口
+
+位置：
+
+- `SystemPromptEditor` 标题区右侧
+
+动作：
+
+- `从资产应用`
+- `保存为资产`
+
+适用场景：
+
+- 用户正在编辑当前项目，需要高效完成资产相关动作
+
+## 6. 页面与组件结构
+
+## 6.1 桌面端总体布局
+
+建议采用右侧 Drawer，宽度约 `420px - 520px`，覆盖在主编辑区右侧。
+
+原因：
+
+- 当前产品左侧已经有 `ProjectListPanel`。
+- 右侧还有 `ApiConfigPanel` 的打开逻辑。
+- 资产管理更适合“临时打开、快速操作、随时关闭”的次级工作区。
+
+为了避免右侧面板过多导致冲突，建议统一产品规则：
+
+- 同一时刻只允许一个右侧功能面板展开。
+- 打开资产 Drawer 时，若 API 设置面板已开，则自动收起 API 设置面板。
+
+## 6.2 Drawer 内部结构
+
+Drawer 采用两层信息架构：
+
+### 第一层：资产列表
+
+包含：
+
+- 搜索框
+- 状态筛选
+- 创建按钮
+- 资产卡片列表
+
+每张卡片显示：
+
+- 资产名称
+- 一行描述
+- 当前版本号，例如 `v12`
+- 最近更新时间
+- 状态标识，例如 `已归档`
+
+### 第二层：资产详情
+
+打开某个资产后展示：
 
 - 名称
 - 描述
-- 提示词正文
-- 版本管理
-- 查看历史版本
-- 回滚到历史版本
-- 将资产内容应用到当前项目的 `systemPrompt`
+- 当前版本号
+- 正文预览 / 编辑器
+- 最近更新时间
+- 操作区
 
-### 2.2 本期不做
+操作区包括：
 
-为控制改动面，第一阶段不做：
+- `应用到当前 System Prompt`
+- `保存为新版本`
+- `查看版本历史`
+- `归档`
 
-- 用户/团队/权限体系
-- 资产标签、文件夹、分享链接
-- 项目存储整体迁移到 SQLite
-- 多人并发编辑冲突处理
-
-## 3. 核心架构决策
-
-### 决策 A：提示词资产独立于现有项目存储
-
-保留当前 `ProjectStore` 文件存储不变，新增一个独立的 `PromptAsset` 子系统。
-
-原因：
-
-- 现有项目编辑链路已经可用，没必要为了提示词资产一次性重构全站存储。
-- 新能力可以独立演进，失败成本低。
-- 后续如果验证成功，再考虑把 `Project` 迁移到 SQLite。
-
-### 决策 B：版本采用“追加式快照”而不是“原地覆盖”
-
-每次保存资产时，新增一条版本记录，不修改旧版本内容。
-
-原因：
-
-- 容易回滚
-- 容易审计
-- SQLite 事务能保证“写入新版本 + 更新当前版本指针”原子完成
-
-### 决策 C：资产主表保存当前态，版本表保存完整快照
-
-`prompt_assets` 保存当前展示态，`prompt_asset_versions` 保存每个版本的完整快照。
-
-原因：
-
-- 列表页不需要每次 join 全历史
-- 版本恢复时只需要把某个历史版本复制为新版本
-- 查询简单，UI 响应更直接
-
-## 4. 目标架构
+## 6.3 推荐界面草图
 
 ```text
-Client UI
-  ├─ Prompt Asset Panel / Drawer
-  ├─ Prompt Asset Editor
-  ├─ Version History List
-  └─ Apply To System Prompt Action
-
-Next.js App Router
-  ├─ /api/projects/**                -> 继续走文件存储
-  └─ /api/prompt-assets/**           -> 新增 SQLite + Drizzle 子系统
-
-Application Layer
-  ├─ ProjectStore                    -> fs/json
-  └─ PromptAssetRepository           -> drizzle/sqlite
-
-Persistence Layer
-  ├─ data/<projectId>/project.json
-  ├─ data/<projectId>/history/*.json
-  └─ data/app.db                     -> prompt_assets / prompt_asset_versions
++--------------------------------------------------+
+| 提示词资产库                              [关闭] |
+| [搜索框..................] [全部] [新建资产]     |
+|--------------------------------------------------|
+| 代码评审提示词                     v8   2小时前   |
+| 用于通用代码 review                            > |
+|--------------------------------------------------|
+| 电商客服系统 Prompt               v3   昨天      |
+| 处理售前与售后问答                              > |
+|--------------------------------------------------|
+|                                                  |
+| 选中后进入详情                                   |
++--------------------------------------------------+
 ```
 
-### 分层说明
+详情态：
 
-#### 1. UI 层
-
-新增提示词资产面板，职责：
-
-- 列出所有提示词资产
-- 搜索资产
-- 查看当前版本
-- 查看历史版本
-- 新建、编辑、归档、恢复
-- 一键应用到当前 `systemPrompt`
-
-#### 2. Route Handler 层
-
-继续沿用当前项目的组织方式，在 `app/api` 下增加新路由。
-
-#### 3. Repository 层
-
-新增 `PromptAssetRepository`，屏蔽 Drizzle 和 SQL 细节。
-
-#### 4. Database 层
-
-SQLite 负责：
-
-- 结构化存储
-- 唯一约束
-- 排序和分页
-- 事务
-- 版本链维护
-
-## 5. 数据模型设计
-
-## 5.1 领域对象
-
-### PromptAsset
-
-代表一个稳定的提示词资产实体。
-
-- `id`
-- `name`
-- `description`
-- `currentVersionNumber`
-- `status`
-- `createdAt`
-- `updatedAt`
-
-### PromptAssetVersion
-
-代表某个时间点的完整快照。
-
-- `id`
-- `assetId`
-- `versionNumber`
-- `nameSnapshot`
-- `descriptionSnapshot`
-- `content`
-- `changeNote`
-- `createdAt`
-
-## 5.2 表设计
-
-### 表一：`prompt_assets`
-
-建议字段：
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `text` | 主键，建议 `cuid`/`uuid` |
-| `name` | `text` | 当前名称 |
-| `description` | `text` | 当前描述 |
-| `current_version_number` | `integer` | 当前版本号，作为第一阶段唯一当前版本指针 |
-| `status` | `text` | `active` / `archived` |
-| `created_at` | `integer` | Unix ms |
-| `updated_at` | `integer` | Unix ms |
-| `archived_at` | `integer nullable` | 归档时间 |
-
-索引建议：
-
-- `idx_prompt_assets_updated_at`
-- `idx_prompt_assets_status`
-- `idx_prompt_assets_name`
-
-### 表二：`prompt_asset_versions`
-
-建议字段：
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `text` | 主键 |
-| `asset_id` | `text` | 外键，关联 `prompt_assets.id` |
-| `version_number` | `integer` | 从 1 开始递增 |
-| `name_snapshot` | `text` | 该版本的名称快照 |
-| `description_snapshot` | `text` | 该版本的描述快照 |
-| `content` | `text` | 提示词正文 |
-| `change_note` | `text nullable` | 版本说明 |
-| `content_hash` | `text` | 内容哈希，用于去重或审计 |
-| `created_at` | `integer` | Unix ms |
-
-约束建议：
-
-- `unique(asset_id, version_number)`
-- 外键 `asset_id -> prompt_assets.id`
-
-### 可选表三：`prompt_asset_usage_logs`
-
-不是第一阶段必须，但建议预留。
-
-用途：
-
-- 记录哪个项目在什么时间应用了哪个资产版本
-- 后续支持“最近使用”“影响分析”“回溯生成上下文”
-
-## 5.3 Drizzle Schema 示例
-
-```ts
-export const promptAssets = sqliteTable('prompt_assets', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  description: text('description').notNull().default(''),
-  currentVersionNumber: integer('current_version_number').notNull().default(1),
-  status: text('status', { enum: ['active', 'archived'] }).notNull().default('active'),
-  createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
-  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
-  archivedAt: integer('archived_at', { mode: 'timestamp_ms' }),
-});
-
-export const promptAssetVersions = sqliteTable(
-  'prompt_asset_versions',
-  {
-    id: text('id').primaryKey(),
-    assetId: text('asset_id').notNull().references(() => promptAssets.id, { onDelete: 'cascade' }),
-    versionNumber: integer('version_number').notNull(),
-    nameSnapshot: text('name_snapshot').notNull(),
-    descriptionSnapshot: text('description_snapshot').notNull().default(''),
-    content: text('content').notNull(),
-    changeNote: text('change_note'),
-    contentHash: text('content_hash').notNull(),
-    operationType: text('operation_type', { enum: ['create', 'update', 'restore', 'import'] }).notNull(),
-    sourceVersionId: text('source_version_id'),
-    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
-  },
-  (table) => ({
-    assetVersionUnique: uniqueIndex('uq_prompt_asset_version').on(table.assetId, table.versionNumber),
-  })
-);
+```text
++--------------------------------------------------+
+| < 返回 代码评审提示词                    v8      |
+| 用于通用代码 review                               |
+|--------------------------------------------------|
+| [应用到当前 System Prompt] [保存为新版本]         |
+| [查看版本历史] [归档]                             |
+|--------------------------------------------------|
+| Prompt 正文预览 / 编辑区                          |
+|                                                  |
+|                                                  |
++--------------------------------------------------+
 ```
 
-## 6. 版本策略
+## 7. 核心任务流
 
-## 6.1 创建资产
+## 7.1 任务流 A：从资产应用到当前项目
 
-创建时执行一个事务：
+目标：
 
-1. 插入 `prompt_assets`
-2. 插入 `prompt_asset_versions(version_number = 1)`
-3. 提交事务，由 `prompt_assets.current_version_number = 1` 表示当前版本
+- 在尽量少的操作下，把已有资产内容带入当前项目。
 
-## 6.2 更新资产
+流程：
 
-更新资产时不覆盖旧版本，而是：
+1. 用户点击 `从资产应用` 或 Header 中的 `提示词资产库`。
+2. 打开 Drawer，默认进入列表态。
+3. 用户搜索或点击某个资产。
+4. 进入详情态并预览正文。
+5. 点击 `应用到当前 System Prompt`。
+6. 弹出轻确认层。
+7. 用户确认后，更新当前项目 `systemPrompt`。
+8. 顶部显示成功反馈，并提示“当前修改仅作用于项目，未改动资产本身”。
 
-1. 读取当前版本号
-2. 新增 `version_number + 1`
-3. 更新 `prompt_assets` 当前态和 `current_version_number`
+确认文案建议：
 
-## 6.3 回滚版本
+- 标题：`应用到当前项目？`
+- 描述：`这会替换当前项目中的 System Prompt，但不会修改资产库内容。`
+- 主按钮：`确认应用`
+- 次按钮：`取消`
 
-回滚不要直接把历史版本标记为当前，而是：
+为什么需要确认：
 
-1. 读取目标历史版本
-2. 复制该版本内容生成一个新版本
-3. 新版本号继续递增
-4. 更新 `prompt_assets.current_version_number`
+- 该动作会直接替换编辑区核心内容。
+- 用户可能已在当前项目里做了未保存修改。
 
-这样可以保留完整操作链。
+### 冲突场景
 
-## 6.4 是否所有修改都产生版本
+如果当前项目 `System Prompt` 有未保存修改，确认层要补一句：
 
-建议第一阶段采用“显式保存产生新版本”：
+`当前项目存在未保存改动，应用后将以资产内容覆盖编辑区。`
 
-- 用户在编辑器里修改 `name / description / content`
-- 点击“保存为新版本”后才落库
+## 7.2 任务流 B：将当前 System Prompt 保存为资产
 
-不要做输入即自动生成版本，否则版本噪音会非常高。
+目标：
 
-## 7. API 设计
+- 把项目内已经验证有效的 prompt 沉淀成可复用模板。
 
-正式 API 契约以后端规范 [prompt-asset-backend-spec.md](./prompt-asset-backend-spec.md) 为准。
+流程：
 
-保持与现有 `/api/projects/**` 一样使用 Route Handler，但资源建模做如下收敛：
+1. 用户在 `SystemPromptEditor` 点击 `保存为资产`。
+2. 弹出保存弹窗。
+3. 自动带入当前 `systemPrompt` 内容。
+4. 用户填写名称、描述、版本说明。
+5. 点击 `创建资产`。
+6. 创建成功后，Toast 提示：`已保存到提示词资产库，当前版本 v1`。
+7. 弹窗关闭，可选择附加操作：`前往查看`。
 
-### `GET /api/prompt-assets`
+弹窗字段：
 
-用途：
+- `名称`：必填
+- `描述`：选填，单行或两行
+- `版本说明`：选填，帮助后续理解本次保存意图
+- `正文`：默认取当前 `systemPrompt`，允许在弹窗中二次微调
 
-- 资产列表
-- 支持 `query`
-- 支持 `status`
-- 支持分页
+为什么正文允许编辑：
 
-响应返回当前态，不返回全部历史。
+- 用户常常是在“接近可复用”的状态点击保存，此时需要轻微整理，而不想先回到主编辑区改完再保存。
 
-### `POST /api/prompt-assets`
+## 7.3 任务流 C：编辑已有资产并生成新版本
 
-用途：
+目标：
 
-- 新建资产
-- 默认生成版本 `v1`
+- 保留历史的前提下，让用户能持续迭代资产。
 
-请求体：
+流程：
 
-```json
-{
-  "name": "代码评审提示词",
-  "description": "用于通用代码 review",
-  "content": "你是一名严谨的代码审查专家",
-  "changeNote": "初始版本"
-}
+1. 用户在 Drawer 中进入资产详情。
+2. 点击 `编辑当前版本` 或直接在编辑态修改。
+3. 用户更改名称、描述、正文、版本说明。
+4. 点击 `保存为新版本`。
+5. 成功后显示：`已生成 v9，v8 历史已保留。`
+6. 详情头部版本号更新为最新版本。
+
+关键交互规则：
+
+- 保存动作永远命名为 `保存为新版本`，不要只写 `保存`。
+- 如果用户没有任何变更，按钮置灰。
+- 如果正文有变化但未填写版本说明，允许保存，不强制阻塞。
+
+## 7.4 任务流 D：查看历史版本并恢复
+
+目标：
+
+- 帮用户安全地回到过去某个稳定版本。
+
+流程：
+
+1. 用户进入资产详情页，点击 `查看版本历史`。
+2. Drawer 内切到历史版本列表态，或从详情态右滑进入次级面板。
+3. 列表按时间倒序展示版本。
+4. 每条版本展示：
+   - 版本号
+   - 时间
+   - 版本说明
+   - 名称快照
+5. 点击某个版本进入只读详情。
+6. 用户点击 `恢复为当前版本`。
+7. 系统二次确认。
+8. 恢复后不覆盖旧版本，而是创建一个新版本，例如从 `v3` 恢复后生成 `v9`。
+
+确认文案建议：
+
+- 标题：`恢复这个版本？`
+- 描述：`系统会基于该历史版本创建一个新的当前版本，原有历史不会丢失。`
+- 主按钮：`恢复并生成新版本`
+
+## 8. 交互状态设计
+
+## 8.1 列表态
+
+列表需要覆盖以下状态：
+
+### 默认态
+
+- 显示最近更新资产
+- 按 `updatedAt desc` 排序
+
+### 搜索态
+
+- 输入时即时过滤
+- 无结果时显示空搜索态，而不是空白
+
+推荐文案：
+
+- 标题：`未找到匹配资产`
+- 描述：`试试更短的关键词，或创建一个新资产。`
+- 操作：`新建资产`
+
+### 空库态
+
+当用户还没有任何资产时：
+
+- 不展示冷冰冰的空表格
+- 需要明确说明资产库的用途
+
+推荐文案：
+
+- 标题：`还没有提示词资产`
+- 描述：`把常用 System Prompt 保存进来，之后可以跨项目复用。`
+- 主按钮：`从当前 Prompt 创建`
+
+### 加载态
+
+- 顶部保留搜索框骨架
+- 列表使用 4 到 6 条 skeleton
+
+### 错误态
+
+- 标题：`资产库加载失败`
+- 描述：`请稍后重试。`
+- 操作：`重新加载`
+
+## 8.2 详情态
+
+详情态需要区分三种模式：
+
+### 只读预览模式
+
+适用于：
+
+- 初次打开资产
+- 用户主要目的是预览和应用
+
+特点：
+
+- 正文区默认只读
+- 主按钮是 `应用到当前 System Prompt`
+- 次按钮是 `编辑`
+
+### 编辑模式
+
+适用于：
+
+- 用户明确要迭代资产版本
+
+特点：
+
+- 名称、描述、正文、版本说明可编辑
+- 底部固定操作栏：`取消`、`保存为新版本`
+
+### 历史版本只读模式
+
+适用于：
+
+- 用户查看旧版本
+
+特点：
+
+- 所有字段只读
+- 主按钮为 `恢复为当前版本`
+
+## 8.3 成功反馈
+
+成功反馈不要只依赖 Toast，关键动作还要在上下文里留下证据。
+
+建议：
+
+- 应用成功后，在 `SystemPromptEditor` 顶部出现短暂状态条：
+  `已应用资产「代码评审提示词」v8`
+- 保存为资产成功后，在弹窗关闭前显示：
+  `已创建资产，当前版本 v1`
+- 保存为新版本成功后，在资产详情头部刷新版本号并短暂高亮：
+  `当前版本 v9`
+
+## 9. 文案与命名规范
+
+## 9.1 命名建议
+
+产品内统一使用：
+
+- 中文：`提示词资产`
+- 英文内部 id：`prompt asset`
+
+避免混用：
+
+- 模板
+- 预设
+- 片段
+- Prompt 仓库
+
+因为这些词会让用户误解范围，尤其“模板”容易被理解成整份项目模板，而不是 system prompt 资产。
+
+## 9.2 主按钮文案
+
+统一建议如下：
+
+| 场景 | 按钮文案 |
+| --- | --- |
+| 从列表进入完整管理 | `提示词资产库` |
+| 从资产写入当前项目 | `应用到当前 System Prompt` |
+| 把当前项目内容沉淀为资产 | `保存为资产` |
+| 更新已有资产 | `保存为新版本` |
+| 从历史版本恢复 | `恢复为当前版本` |
+| 新建资产 | `新建资产` |
+
+## 9.3 提示文案
+
+关键提示文案要持续传达两个事实：
+
+1. 应用资产会改项目，不会改资产。
+2. 保存资产会生成版本，不会覆盖历史。
+
+建议在以下位置重复强化：
+
+- 应用确认层
+- 保存成功 Toast
+- 详情页版本说明区域
+
+## 10. 异常与边界场景
+
+## 10.1 当前没有打开项目
+
+如果用户从 Header 打开资产库，但当前没有选中项目：
+
+- 仍允许浏览资产库
+- 禁用 `应用到当前 System Prompt`
+
+禁用态提示：
+
+`请先选择一个项目，再将资产应用到 System Prompt。`
+
+## 10.2 当前 System Prompt 为空
+
+若点击 `保存为资产` 时 `systemPrompt` 为空：
+
+- 不允许直接保存
+- 弹出轻提示而不是空白表单
+
+推荐文案：
+
+`当前项目的 System Prompt 为空，无法保存为资产。`
+
+## 10.3 资产已归档
+
+归档资产默认：
+
+- 不在默认列表优先展示
+- 可通过筛选切换查看
+
+归档资产在详情页中：
+
+- 允许查看历史
+- 默认不允许编辑
+- 可以提供 `恢复资产`，但不是第一优先动作
+
+## 10.4 应用前有未保存改动
+
+如果当前项目处于未保存状态：
+
+- 允许应用
+- 但必须显式提醒会覆盖编辑区内容
+
+此处不要直接阻塞，因为这会让用户觉得流程过重。
+
+## 11. 响应式策略
+
+## 11.1 桌面端
+
+- 优先使用右侧 Drawer
+- 列表与详情可采用同层切换
+
+## 11.2 移动端
+
+移动端不适合同时展示复杂版本信息，建议：
+
+- 使用全屏 Sheet 或全屏页面承载资产库
+- 列表、详情、历史采用逐层前进的导航模式
+- 底部操作区固定吸附
+
+移动端优先保障三件事：
+
+1. 浏览列表
+2. 应用到当前项目
+3. 保存为资产
+
+版本历史编辑可以更克制，但不能缺失。
+
+## 12. 前端实现映射
+
+本节只定义 UX 落地所需的前端边界；API 契约、服务分层与数据库事务规则以后端规范和数据库设计文档为准。
+
+## 12.1 推荐组件拆分
+
+```text
+app/components/prompt-assets/
+  PromptAssetDrawer.tsx
+  PromptAssetList.tsx
+  PromptAssetListItem.tsx
+  PromptAssetDetail.tsx
+  PromptAssetEditor.tsx
+  PromptAssetVersionHistory.tsx
+  SavePromptAssetDialog.tsx
+  ApplyPromptAssetConfirmDialog.tsx
 ```
 
-### `GET /api/prompt-assets/:id`
+## 12.2 状态边界
 
-用途：
+不建议把提示词资产管理直接塞进现有 `EditorContext`。
 
-- 获取单个资产当前态
-- 返回当前版本详情
-
-### `POST /api/prompt-assets/:id/versions`
-
-用途：
-
-- 基于当前编辑内容创建新版本
-- 避免用 `PUT` 表达“原地更新”的歧义
-
-### `GET /api/prompt-assets/:id/versions`
-
-用途：
-
-- 查询版本历史
-
-### `GET /api/prompt-assets/:id/versions/:versionId`
-
-用途：
-
-- 查看具体版本详情
-
-### `POST /api/prompt-assets/:id/restore`
-
-用途：
-
-- 将历史版本恢复为一个新的当前版本
-
-请求体：
-
-```json
-{
-  "versionId": "ver_xxx",
-  "changeNote": "从 v3 回滚"
-}
-```
-
-### `POST /api/prompt-assets/:id/archive`
-
-用途：
-
-- 归档资产
-
-### `POST /api/prompt-assets/:id/unarchive`
-
-用途：
-
-- 取消归档
-
-说明：
-
-- 第一阶段不暴露物理删除接口
-- 如果确实需要物理删除，应作为管理命令或脚本能力，而不是普通 UI API
-
-## 8. 前端交互设计
-
-## 8.1 UI 放置建议
-
-当前页面中最合适的入口有两个：
-
-### 方案 A：集成到 `SystemPromptEditor`
-
-在现有系统提示词编辑器顶部增加：
-
-- `从资产库选择`
-- `保存为资产`
-- `查看版本`
-
-优点：
-
-- 与主要使用场景最近
-- 用户心智简单
-
-缺点：
-
-- `SystemPromptEditor` 会变重
-
-### 方案 B：新增独立的 Prompt Asset Drawer
-
-从 `Header` 打开右侧面板，专门管理资产。
-
-优点：
-
-- 资产管理是完整的独立模块
-- 便于后续增加搜索、筛选、版本历史
-
-缺点：
-
-- 从编辑到应用多一步
-
-### 建议
-
-第一阶段采用“组合方案”：
-
-- `Header` 增加“提示词资产库”入口
-- `SystemPromptEditor` 增加“从资产应用”和“保存为资产”快捷按钮
-
-这样既保留独立管理能力，也不牺牲高频操作效率。
-
-## 8.2 前端状态设计
-
-不要把提示词资产状态塞进现有 `EditorContext`。
-
-建议新增独立上下文或轻量 hook，例如：
+建议新增：
 
 - `PromptAssetContext`
-- 或 `usePromptAssets()`
+或
+- `usePromptAssets()` + 局部 state
 
 原因：
 
-- 项目编辑状态和资产库状态是两个 bounded context
-- 避免 `EditorContext` 继续膨胀
-- 便于未来资产库页面独立复用
+- `Project` 编辑与资产管理是两个不同的状态域。
+- 资产列表、详情、版本历史、筛选条件，会让 `EditorContext` 继续膨胀。
+- 后续若增加独立资产页，也更容易迁移。
 
-## 8.3 关键交互流
+## 12.3 与当前界面的耦合点
 
-### 流程 1：从资产应用到当前项目
+当前代码中最关键的接入位置只有两个：
 
-1. 用户打开资产库
-2. 选择某个资产当前版本
-3. 点击“应用到 System Prompt”
-4. 前端调用 `updateSystemPrompt(content)`
-5. 当前项目仍沿用现有保存机制
+### Header
 
-### 流程 2：将当前 System Prompt 保存为资产
+新增：
 
-1. 读取当前 `currentProject.systemPrompt`
-2. 弹出保存弹窗
-3. 输入名称、描述、版本说明
-4. 调用 `POST /api/prompt-assets`
+- 打开资产库的按钮
 
-### 流程 3：编辑已有资产并生成新版本
+### SystemPromptEditor
 
-1. 打开资产详情
-2. 编辑名称、描述、正文
-3. 点击保存
-4. `POST /api/prompt-assets/:id/versions`
-5. 后端创建新版本并更新当前版本指针
+新增：
 
-## 9. 代码组织建议
+- `从资产应用`
+- `保存为资产`
+- 应用成功后的轻量状态提示
 
-建议新增如下结构：
+这两个入口足以支撑第一阶段闭环，不需要先改消息编辑区。
 
-```text
-app/
-  api/
-    prompt-assets/
-      route.ts
-      [id]/
-        route.ts
-        versions/
-          route.ts
-          [versionId]/
-            route.ts
-        restore/
-          route.ts
-  components/
-    prompt-assets/
-      PromptAssetDrawer.tsx
-      PromptAssetList.tsx
-      PromptAssetEditor.tsx
-      PromptAssetVersionList.tsx
-      SaveAsPromptAssetDialog.tsx
-  lib/
-    db/
-      client.ts
-      schema/
-        prompt-assets.ts
-    repositories/
-      prompt-asset-repository.ts
-    services/
-      prompt-asset-service.ts
-```
+## 13. 数据与交互约束
 
-职责分工建议：
+虽然本文档不是数据库设计文档，但 UX 方案依赖以下系统约束成立：
 
-- `db/client.ts`：初始化 SQLite 和 Drizzle
-- `schema/prompt-assets.ts`：表结构定义
-- `repositories/prompt-asset-repository.ts`：纯数据访问
-- `services/prompt-asset-service.ts`：封装版本号递增、回滚等业务规则
+- 每个资产必须有稳定 `id`
+- 每次保存必须生成递增版本号
+- 资产主记录要能快速返回“当前态”
+- 历史版本必须可查询、可恢复
+- 恢复历史版本时，应创建新版本而不是直接改指针
 
-## 10. 迁移与上线策略
+这些约束决定了 UI 才能自然表达：
 
-## 阶段一：只落提示词资产
+- `当前版本`
+- `历史版本`
+- `恢复后历史仍保留`
 
-内容：
+## 14. 分期建议
 
-- 引入 SQLite 与 Drizzle
-- 新增提示词资产表
-- 新增 API
-- 新增资产管理 UI
-- 支持应用到 `systemPrompt`
+## 14.1 Phase 1
 
-收益：
+必须交付：
 
-- 需求闭环
-- 对现有项目编辑影响最小
+- 资产 Drawer
+- 列表、搜索、详情
+- 从资产应用到当前 `System Prompt`
+- 将当前 `System Prompt` 保存为资产
+- 编辑资产并保存为新版本
+- 查看历史版本并恢复为新版本
 
-## 阶段二：补充资产引用关系
+## 14.2 Phase 2
 
-可选新增：
+可以后续再做：
 
-- `projectId`
-- `assetId`
-- `versionId`
+- 标签 / 文件夹
+- 资产引用来源显示
+- “此项目当前使用的是哪个资产版本”
+- 版本差异对比
+- 最近使用 / 高频使用排序
 
-用于记录“某个项目当前 systemPrompt 来源于哪个资产版本”。
+## 15. 验收标准
 
-这样后续可以支持：
+如果以下问题都能被顺畅回答，说明 UX 方案成立：
 
-- 提示用户当前项目使用的是哪条资产
-- 检查资产更新后是否同步到项目
+1. 用户能否在 3 次点击内把某个资产应用到当前项目？
+2. 用户能否在当前项目里顺手把 prompt 保存成资产，而不需要跳走？
+3. 用户是否始终能分清“改项目”和“改资产”是两回事？
+4. 用户能否理解“恢复历史版本”不会删除现有版本链？
+5. 当资产库为空、搜索无结果、加载失败时，界面是否仍然可理解且可操作？
 
-## 阶段三：评估项目存储迁移
+## 16. 最终建议
 
-如果 SQLite 子系统运行稳定，再评估是否把 `ProjectStore` 从文件系统迁移到 Drizzle。
+本项目的提示词资产管理不应该做成重量级后台，而应该做成围绕 `System Prompt` 的“近场能力”：
 
-不建议现在一起做，风险过高。
+- 管理入口放在 Header
+- 高频动作贴在 `SystemPromptEditor`
+- 主工作区使用右侧 Drawer
+- 所有版本动作都显式化
+- 所有“应用”动作都强调只影响当前项目副本
 
-## 11. 风险与应对
+这能在当前产品阶段获得最好的平衡：
 
-### 风险 1：两套存储并存
-
-现状会变成：
-
-- 项目走文件系统
-- 提示词资产走 SQLite
-
-这是可接受的阶段性复杂度，因为两个领域边界清晰。
-
-### 风险 2：版本过多
-
-如果每次小改动都自动保存，会导致版本噪音。
-
-应对：
-
-- 只在显式保存时创建版本
-- 支持填写 `changeNote`
-
-### 风险 3：未来资产和项目关系不清
-
-如果只做“复制内容到 systemPrompt”，未来会缺少引用关系。
-
-应对：
-
-- 第一阶段允许纯复制
-- 第二阶段补 usage/reference 关系表
-
-## 12. 推荐实施顺序
-
-1. 引入 `sqlite + drizzle + migration` 基础设施
-2. 建立 `prompt_assets` 与 `prompt_asset_versions`
-3. 完成 `PromptAssetRepository` 和 `PromptAssetService`
-4. 提供 `list/create/update/restore/archive` API
-5. 新增资产库面板
-6. 在 `SystemPromptEditor` 增加“应用资产”和“保存为资产”
-7. 增加测试，覆盖版本递增、回滚、归档、列表查询
-
-## 13. 最终建议
-
-这次设计建议采用“增量式架构”：
-
-- 不改现有项目存储
-- 提示词资产单独建模
-- 用 SQLite + Drizzle 处理版本化数据
-- 用 UI 快捷操作把资产库和 `SystemPromptEditor` 串起来
-
-这是当前成本最低、边界最清晰、最容易验证的一条路线。
+- 不打断主流程
+- 不把信息架构做重
+- 仍然具备足够清晰的版本心智与复用效率
