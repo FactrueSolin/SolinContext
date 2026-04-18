@@ -230,6 +230,36 @@ export interface ProjectData {
   apiConfig: ApiConfig;
 }
 
+// ==================== Prompt Asset Types ====================
+
+export type PromptAssetStatus = 'active' | 'archived';
+
+export type PromptAssetDrawerEntry = 'browse' | 'save';
+
+export interface PromptAssetVersion {
+  id: string;
+  version: number;
+  nameSnapshot: string;
+  descriptionSnapshot: string;
+  content: string;
+  note: string;
+  createdAt: string;
+}
+
+export interface PromptAsset {
+  id: string;
+  name: string;
+  description: string;
+  status: PromptAssetStatus;
+  updatedAt: string;
+  versions: PromptAssetVersion[];
+}
+
+export interface PromptAssetNotice {
+  assetName: string;
+  versionLabel: string;
+}
+
 // API生成请求体
 export interface GenerateRequest {
   baseUrl: string;

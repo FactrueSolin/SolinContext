@@ -4,10 +4,11 @@ import React, { useEffect } from 'react';
 import Header from './components/Header';
 import ProjectListPanel from './components/ProjectListPanel';
 import ApiConfigPanel from './components/ApiConfigPanel';
+import PromptAssetDrawer from './components/PromptAssetDrawer';
 import SystemPromptEditor from './components/SystemPromptEditor';
 import MessageList from './components/MessageList';
 import { useEditor } from './contexts/EditorContext';
-import { PlusCircle, User, Bot } from 'lucide-react';
+import { User, Bot } from 'lucide-react';
 
 export default function Home() {
   const {
@@ -28,6 +29,7 @@ export default function Home() {
       <div className="flex-1 relative flex overflow-hidden">
         <ProjectListPanel />
         <ApiConfigPanel />
+        <PromptAssetDrawer />
 
         <main className="flex-1 flex flex-col h-full overflow-hidden">
           {!currentProject ? (

@@ -1,15 +1,16 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useEditorActions, useEditorState } from '../contexts/EditorContext';
-import { FolderOpen, Save, Settings, Download, Upload, Code, FileJson } from 'lucide-react';
+import { FolderOpen, Save, Settings, Download, Upload, Code, FileJson, Sparkles } from 'lucide-react';
 import { exportToXmlPrompt, exportToMessageJson } from '../lib/utils';
 
 function Header() {
-    const { currentProject, isSaving, error } = useEditorState();
+    const { currentProject, isSaving, error, showPromptAssets } = useEditorState();
     const {
         toggleProjectList,
         toggleApiConfig,
+        togglePromptAssets,
         saveProject,
         renameProject,
     } = useEditorActions();
@@ -18,12 +19,6 @@ function Header() {
     const [editedName, setEditedName] = useState('');
     const [isCopied, setIsCopied] = useState(false);
     const [isJsonCopied, setIsJsonCopied] = useState(false);
-
-    useEffect(() => {
-        if (!isEditingName && currentProject) {
-            setEditedName(currentProject.meta.name);
-        }
-    }, [currentProject, isEditingName]);
 
     const handleEditName = () => {
         if (currentProject) {
@@ -228,6 +223,19 @@ function Header() {
                 </label>
 
                 <div className="w-px h-5 bg-[var(--border)] mx-1 hidden sm:block" />
+
+                <button
+                    onClick={() => togglePromptAssets('browse')}
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition-colors duration-[var(--transition-fast)] active:scale-95 ${
+                        showPromptAssets
+                            ? 'bg-[var(--asset-primary-soft)] text-[var(--asset-primary)]'
+                            : 'text-[var(--muted-foreground)] hover:bg-[var(--muted)]'
+                    }`}
+                    title="提示词资产库"
+                >
+                    <Sparkles size={16} />
+                    <span className="hidden md:inline">提示词资产库</span>
+                </button>
 
                 <button
                     onClick={toggleApiConfig}

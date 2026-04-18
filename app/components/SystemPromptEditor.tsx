@@ -1,17 +1,27 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useEditorActions, useEditorState } from '../contexts/EditorContext';
-import { ChevronDown, ChevronRight, Terminal, Eye, Pencil } from 'lucide-react';
+import { ChevronDown, ChevronRight, Terminal, Eye, Pencil, Sparkles, BookmarkPlus, X } from 'lucide-react';
 import AutoResizeTextarea from './ui/AutoResizeTextarea';
 import MarkdownPreview from './ui/MarkdownPreview';
 
 function SystemPromptEditor() {
-    const { currentProject } = useEditorState();
-    const { updateSystemPrompt } = useEditorActions();
+    const { currentProject, promptAssetNotice } = useEditorState();
+    const { updateSystemPrompt, openPromptAssets, setPromptAssetNotice } = useEditorActions();
 
     const [isExpanded, setIsExpanded] = useState(true);
     const [isPreview, setIsPreview] = useState(false);
+
+    useEffect(() => {
+        if (!promptAssetNotice) return;
+
+        const timer = window.setTimeout(() => {
+            setPromptAssetNotice(null);
+        }, 4200);
+
+        return () => window.clearTimeout(timer);
+    }, [promptAssetNotice, setPromptAssetNotice]);
 
     if (!currentProject) return null;
 
@@ -45,7 +55,45 @@ function SystemPromptEditor() {
             {/* Content - 条件渲染，不使用 CSS 动画折叠 */}
             {isExpanded && (
                 <div className="p-4">
-                    <div className="flex items-center justify-end mb-2">
+                    {promptAssetNotice && (
+                        <div className="mb-3 flex items-start justify-between gap-3 rounded-[var(--radius-md)] border border-cyan-200/80 bg-cyan-50/90 px-3 py-2.5 text-sm text-cyan-800 dark:border-cyan-900/60 dark:bg-cyan-950/40 dark:text-cyan-200">
+                            <div className="flex items-start gap-2">
+                                <Sparkles size={15} className="mt-0.5" />
+                                <div>
+                                    <p className="font-medium">
+                                        已应用资产「{promptAssetNotice.assetName}」{promptAssetNotice.versionLabel}
+                                    </p>
+                                    <p className="mt-0.5 text-xs text-cyan-700/80 dark:text-cyan-200/80">
+                                        当前修改仅作用于项目，未改动资产本身。
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setPromptAssetNotice(null)}
+                                className="rounded-full p-1 text-cyan-700/80 hover:bg-cyan-100 dark:text-cyan-200/80 dark:hover:bg-cyan-900/40"
+                                title="关闭提示"
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                    )}
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <button
+                                onClick={() => openPromptAssets('browse')}
+                                className="inline-flex items-center gap-1.5 rounded-full bg-[var(--asset-primary-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--asset-primary)] shadow-sm hover:bg-cyan-100 dark:hover:bg-cyan-950/80"
+                            >
+                                <Sparkles size={13} />
+                                从资产应用
+                            </button>
+                            <button
+                                onClick={() => openPromptAssets('save')}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-yellow-300/60 bg-white/60 px-3 py-1.5 text-xs font-semibold text-yellow-800 shadow-sm hover:bg-yellow-100/80 dark:border-yellow-800/50 dark:bg-yellow-950/20 dark:text-yellow-300 dark:hover:bg-yellow-900/30"
+                            >
+                                <BookmarkPlus size={13} />
+                                保存为资产
+                            </button>
+                        </div>
                         <button
                             onClick={(e) => { e.stopPropagation(); setIsPreview(!isPreview); }}
                             className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-[var(--radius-sm)] border border-yellow-300/60 dark:border-yellow-800/50 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-100/50 dark:hover:bg-yellow-900/30 transition-colors duration-[var(--transition-fast)]"

@@ -18,7 +18,9 @@ import type {
     ContentBlock,
     EditorMessage,
     GenerateRequest,
-    GenerateResponse
+    GenerateResponse,
+    PromptAssetDrawerEntry,
+    PromptAssetNotice
 } from '../types';
 import { createDefaultApiConfig, createEmptyMessage, generateId } from '../lib/utils';
 
@@ -31,6 +33,9 @@ export interface EditorState {
     error: string | null;
     showApiConfig: boolean;
     showProjectList: boolean;
+    showPromptAssets: boolean;
+    promptAssetEntry: PromptAssetDrawerEntry;
+    promptAssetNotice: PromptAssetNotice | null;
 }
 
 export interface EditorActions {
@@ -47,6 +52,9 @@ export interface EditorActions {
     renameProject: (name: string) => Promise<void>;
     toggleApiConfig: () => void;
     toggleProjectList: () => void;
+    openPromptAssets: (entry?: PromptAssetDrawerEntry) => void;
+    togglePromptAssets: (entry?: PromptAssetDrawerEntry) => void;
+    closePromptAssets: () => void;
     updateSystemPrompt: (systemPrompt: string) => void;
     updateApiConfig: (apiConfig: Partial<ApiConfig>) => void;
     updateCompareModel: (compareModel: CompareApiConfig | undefined) => void;
@@ -60,6 +68,7 @@ export interface EditorActions {
     setAssistantContent: (messageId: string, content: ContentBlock[]) => void;
     updateProjectName: (name: string) => void;
     setError: (error: string | null) => void;
+    setPromptAssetNotice: (notice: PromptAssetNotice | null) => void;
 }
 
 export type EditorAction =
@@ -71,6 +80,10 @@ export type EditorAction =
     | { type: 'SET_ERROR'; error: string | null }
     | { type: 'TOGGLE_API_CONFIG' }
     | { type: 'TOGGLE_PROJECT_LIST' }
+    | { type: 'OPEN_PROMPT_ASSETS'; entry: PromptAssetDrawerEntry }
+    | { type: 'TOGGLE_PROMPT_ASSETS'; entry: PromptAssetDrawerEntry }
+    | { type: 'CLOSE_PROMPT_ASSETS' }
+    | { type: 'SET_PROMPT_ASSET_NOTICE'; notice: PromptAssetNotice | null }
     | { type: 'UPDATE_SYSTEM_PROMPT'; systemPrompt: string }
     | { type: 'UPDATE_API_CONFIG'; apiConfig: Partial<ApiConfig> }
     | { type: 'ADD_MESSAGE'; role: MessageRole }
@@ -98,6 +111,9 @@ export const initialState: EditorState = {
     error: null,
     showApiConfig: false,
     showProjectList: true,
+    showPromptAssets: false,
+    promptAssetEntry: 'browse',
+    promptAssetNotice: null,
 };
 
 export function editorReducer(state: EditorState, action: EditorAction): EditorState {
@@ -115,9 +131,40 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
         case 'SET_ERROR':
             return { ...state, error: action.error };
         case 'TOGGLE_API_CONFIG':
-            return { ...state, showApiConfig: !state.showApiConfig };
+            return {
+                ...state,
+                showApiConfig: !state.showApiConfig,
+                showPromptAssets: !state.showApiConfig ? false : state.showPromptAssets,
+            };
         case 'TOGGLE_PROJECT_LIST':
             return { ...state, showProjectList: !state.showProjectList };
+        case 'OPEN_PROMPT_ASSETS':
+            return {
+                ...state,
+                showPromptAssets: true,
+                promptAssetEntry: action.entry,
+                showApiConfig: false,
+            };
+        case 'TOGGLE_PROMPT_ASSETS': {
+            const nextShowPromptAssets = !state.showPromptAssets;
+            return {
+                ...state,
+                showPromptAssets: nextShowPromptAssets,
+                promptAssetEntry: action.entry,
+                showApiConfig: nextShowPromptAssets ? false : state.showApiConfig,
+            };
+        }
+        case 'CLOSE_PROMPT_ASSETS':
+            return {
+                ...state,
+                showPromptAssets: false,
+                promptAssetEntry: 'browse',
+            };
+        case 'SET_PROMPT_ASSET_NOTICE':
+            return {
+                ...state,
+                promptAssetNotice: action.notice,
+            };
         case 'UPDATE_SYSTEM_PROMPT':
             if (!state.currentProject) return state;
             return {
@@ -932,6 +979,13 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
     const toggleApiConfig = useCallback(() => dispatch({ type: 'TOGGLE_API_CONFIG' }), []);
     const toggleProjectList = useCallback(() => dispatch({ type: 'TOGGLE_PROJECT_LIST' }), []);
+    const openPromptAssets = useCallback((entry: PromptAssetDrawerEntry = 'browse') => {
+        dispatch({ type: 'OPEN_PROMPT_ASSETS', entry });
+    }, []);
+    const togglePromptAssets = useCallback((entry: PromptAssetDrawerEntry = 'browse') => {
+        dispatch({ type: 'TOGGLE_PROMPT_ASSETS', entry });
+    }, []);
+    const closePromptAssets = useCallback(() => dispatch({ type: 'CLOSE_PROMPT_ASSETS' }), []);
     const updateSystemPrompt = useCallback((systemPrompt: string) => dispatch({ type: 'UPDATE_SYSTEM_PROMPT', systemPrompt }), []);
     const updateApiConfig = useCallback((apiConfig: Partial<ApiConfig>) => dispatch({ type: 'UPDATE_API_CONFIG', apiConfig }), []);
     const updateCompareModel = useCallback((compareModel: CompareApiConfig | undefined) => dispatch({ type: 'UPDATE_COMPARE_MODEL', compareModel }), []);
@@ -945,6 +999,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     const setAssistantContent = useCallback((messageId: string, content: ContentBlock[]) => dispatch({ type: 'SET_ASSISTANT_CONTENT', messageId, content }), []);
     const updateProjectName = useCallback((name: string) => dispatch({ type: 'UPDATE_PROJECT_NAME', name }), []);
     const setError = useCallback((error: string | null) => dispatch({ type: 'SET_ERROR', error }), []);
+    const setPromptAssetNotice = useCallback((notice: PromptAssetNotice | null) => {
+        dispatch({ type: 'SET_PROMPT_ASSET_NOTICE', notice });
+    }, []);
 
     const renameProject = useCallback(async (name: string) => {
         const normalizedName = name.trim();
@@ -1002,6 +1059,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         renameProject,
         toggleApiConfig,
         toggleProjectList,
+        openPromptAssets,
+        togglePromptAssets,
+        closePromptAssets,
         updateSystemPrompt,
         updateApiConfig,
         updateCompareModel,
@@ -1015,6 +1075,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setAssistantContent,
         updateProjectName,
         setError,
+        setPromptAssetNotice,
     }), [
         loadProjects,
         loadProject,
@@ -1028,6 +1089,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         renameProject,
         toggleApiConfig,
         toggleProjectList,
+        openPromptAssets,
+        togglePromptAssets,
+        closePromptAssets,
         updateSystemPrompt,
         updateApiConfig,
         updateCompareModel,
@@ -1041,6 +1105,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setAssistantContent,
         updateProjectName,
         setError,
+        setPromptAssetNotice,
     ]);
 
     return (
