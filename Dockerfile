@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.7
+
 FROM node:20-bookworm-slim AS base
 
 ENV PNPM_HOME="/pnpm"
@@ -9,12 +11,14 @@ RUN corepack enable
 FROM base AS deps
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++
 
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile --registry=https://registry.npmmirror.com
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --frozen-lockfile --store-dir=/pnpm/store --registry=https://registry.npmmirror.com
 
 FROM base AS builder
 WORKDIR /app
@@ -22,7 +26,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-RUN pnpm build
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    --mount=type=cache,id=next-cache,target=/app/.next/cache \
+    pnpm build
 
 FROM node:20-bookworm-slim AS runner
 WORKDIR /app
@@ -33,9 +39,10 @@ ENV PORT=3000
 ENV DATA_DIR=/app/data
 ENV PROMPT_ASSET_DB_PATH=/app/data/app.db
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends gosu libstdc++6 \
-    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update \
+    && apt-get install -y --no-install-recommends gosu libstdc++6
 
 RUN addgroup --system nodejs && adduser --system --ingroup nodejs nextjs
 

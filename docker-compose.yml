@@ -2,6 +2,10 @@ services:
   app:
     build:
       context: .
+      cache_from:
+        - type=local,src=.docker-cache
+      cache_to:
+        - type=local,dest=.docker-cache,mode=max
     environment:
       NODE_ENV: production
       DATA_DIR: /app/data
