@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     Archive,
@@ -182,13 +184,13 @@ function Modal({
     );
 }
 
-export default function PromptAssetDrawer() {
+export default function PromptAssetDrawer({ entry = null }: { entry?: string | null }) {
     const {
-        state: { currentProject, promptAssetEntry, showPromptAssets },
-        closePromptAssets,
+        state: { currentProject },
         setPromptAssetNotice,
         updateSystemPrompt,
     } = useEditor();
+    const router = useRouter();
 
     const [assets, setAssets] = useState<PromptAssetSummary[]>([]);
     const [isLoadingList, setIsLoadingList] = useState(false);
@@ -213,6 +215,7 @@ export default function PromptAssetDrawer() {
     const listRequestIdRef = useRef(0);
     const detailRequestIdRef = useRef(0);
     const historyRequestIdRef = useRef(0);
+    const lastHandledEntryRef = useRef<string | null>(null);
 
     const selectedHistoryVersion = useMemo(
         () => versions.find((version) => version.id === historyVersionId) ?? null,
@@ -326,34 +329,32 @@ export default function PromptAssetDrawer() {
     }, [toast]);
 
     useEffect(() => {
-        if (!showPromptAssets) return;
+        if (entry === lastHandledEntryRef.current) {
+            return;
+        }
 
-        setView('list');
-        setFilter('active');
-        setQuery('');
-        setSelectedAssetId(null);
-        setSelectedAssetDetail(null);
-        setVersions([]);
-        setHistoryVersionId(null);
-        setDetailError(null);
-        setHistoryError(null);
-        setShowApplyConfirm(false);
-        setShowRestoreConfirm(false);
+        lastHandledEntryRef.current = entry;
 
-        if (promptAssetEntry === 'save') {
+        if (entry !== 'save') {
+            return;
+        }
+
+        if (!currentProjectPromptRef.current.trim()) {
+            setToast({
+                tone: 'info',
+                message: '当前项目的 System Prompt 为空，无法保存为资产。',
+            });
+        } else {
             setSaveDraft(makeBlankDraft(currentProjectPromptRef.current));
             setShowSaveModal(true);
-        } else {
-            setShowSaveModal(false);
         }
-    }, [promptAssetEntry, showPromptAssets]);
+
+        router.replace('/prompt-assets', { scroll: false });
+    }, [entry, router]);
 
     useEffect(() => {
-        if (!showPromptAssets) return;
         void loadAssetsForCurrentFilters();
-    }, [loadAssetsForCurrentFilters, showPromptAssets]);
-
-    if (!showPromptAssets) return null;
+    }, [loadAssetsForCurrentFilters]);
 
     const handleOpenDetail = (assetId: string) => {
         setSelectedAssetId(assetId);
@@ -502,11 +503,7 @@ export default function PromptAssetDrawer() {
             versionLabel: `v${selectedAssetDetail.currentVersion.versionNumber}`,
         });
         setShowApplyConfirm(false);
-        setToast({
-            tone: 'success',
-            message: `已应用资产「${selectedAssetDetail.name}」v${selectedAssetDetail.currentVersion.versionNumber}`,
-        });
-        closePromptAssets();
+        router.push('/');
     };
 
     const handleOpenHistory = async () => {
@@ -1037,97 +1034,123 @@ export default function PromptAssetDrawer() {
               : 'border-white/70 bg-white/90 text-[var(--foreground)] dark:bg-slate-900/80';
 
     return (
-        <div className="absolute inset-y-0 right-0 left-0 z-20">
-            <button
-                className="absolute inset-0 bg-slate-950/18 backdrop-blur-[1px]"
-                onClick={closePromptAssets}
-                aria-label="关闭提示词资产库"
-            />
-            <aside className="absolute top-0 right-0 bottom-0 z-10 flex w-full flex-col overflow-hidden border-l border-white/60 bg-[var(--asset-drawer-bg)] shadow-2xl shadow-cyan-950/15 backdrop-blur-xl animate-[slideInRight_220ms_ease-out] sm:w-[520px]">
-                <div className="border-b border-white/60 bg-[var(--asset-header-bg)] px-5 pb-5 pt-6">
-                    <div className="flex items-start justify-between gap-4">
-                        <div>
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--asset-primary)]">
-                                Prompt Assets
-                            </p>
-                            <h2 className="mt-2 text-2xl font-semibold text-[var(--foreground)]">提示词资产库</h2>
-                            <p className="mt-2 max-w-md text-sm leading-6 text-[var(--muted-foreground)]">
-                                资产是模板来源，项目里的 System Prompt 是当前工作副本。
-                            </p>
+        <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
+            <div className="mx-auto flex min-h-screen max-w-7xl flex-col px-4 py-5 sm:px-6 lg:px-8">
+                <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--asset-primary)]">
+                            Prompt Assets
+                        </p>
+                        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--foreground)]">
+                            提示词资产库
+                        </h1>
+                        <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted-foreground)]">
+                            资产是模板来源，项目里的 System Prompt 是当前工作副本。这里集中完成浏览、沉淀、版本管理和应用。
+                        </p>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                        <div className="max-w-[320px] truncate rounded-full border border-white/60 bg-white/75 px-4 py-2 text-sm text-[var(--muted-foreground)] shadow-sm dark:bg-slate-900/50">
+                            {currentProject ? `当前项目：${currentProject.meta.name}` : '当前未选择项目，仅浏览资产'}
                         </div>
-                        <button
-                            onClick={closePromptAssets}
-                            className="rounded-full border border-white/60 bg-white/70 p-2 text-[var(--muted-foreground)] shadow-sm hover:bg-white dark:bg-slate-900/50"
-                            aria-label="关闭提示词资产库"
+                        <Link
+                            href="/"
+                            className="inline-flex items-center gap-2 rounded-full border border-white/60 bg-white/80 px-4 py-2 text-sm font-medium text-[var(--foreground)] shadow-sm hover:bg-white dark:bg-slate-900/50"
                         >
-                            <X size={16} />
-                        </button>
+                            <ArrowLeft size={15} />
+                            返回编辑器
+                        </Link>
+                    </div>
+                </div>
+
+                <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[32px] border border-white/60 bg-[var(--asset-drawer-bg)] shadow-2xl shadow-cyan-950/15 backdrop-blur-xl">
+                    <div className="border-b border-white/60 bg-[var(--asset-header-bg)] px-5 pb-5 pt-6 sm:px-6">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--asset-primary)]">
+                                    Library Workspace
+                                </p>
+                                <h2 className="mt-2 text-2xl font-semibold text-[var(--foreground)]">
+                                    {view === 'list' ? '浏览和管理资产' : '资产详情与版本'}
+                                </h2>
+                                <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted-foreground)]">
+                                    {view === 'list'
+                                        ? '搜索、筛选并整理可复用提示词，也可以从当前项目直接沉淀为资产。'
+                                        : '查看当前版本、编辑新版本、恢复历史版本，或把资产应用回项目。'}
+                                </p>
+                            </div>
+                            <Link
+                                href="/"
+                                className="hidden rounded-full border border-white/60 bg-white/70 p-2 text-[var(--muted-foreground)] shadow-sm hover:bg-white dark:bg-slate-900/50 sm:inline-flex"
+                                aria-label="返回编辑器"
+                            >
+                                <X size={16} />
+                            </Link>
+                        </div>
+
+                        {view === 'list' && (
+                            <div className="mt-5 space-y-3">
+                                <div className="relative">
+                                    <Search
+                                        size={16}
+                                        className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={query}
+                                        onChange={(event) => setQuery(event.target.value)}
+                                        placeholder="搜索资产名称"
+                                        className="w-full rounded-[20px] border border-white/60 bg-white/80 py-3 pl-11 pr-4 text-sm text-[var(--foreground)] shadow-sm outline-none ring-0 placeholder:text-[var(--muted-foreground)] dark:bg-slate-900/55"
+                                    />
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {[
+                                        { label: '全部', value: 'all' as const },
+                                        { label: '生效中', value: 'active' as const },
+                                        { label: '已归档', value: 'archived' as const },
+                                    ].map((item) => (
+                                        <button
+                                            key={item.value}
+                                            onClick={() => setFilter(item.value)}
+                                            className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                                                filter === item.value
+                                                    ? 'bg-[var(--asset-primary)] text-white shadow-lg shadow-cyan-950/15'
+                                                    : 'border border-white/70 bg-white/70 text-[var(--muted-foreground)] hover:text-[var(--foreground)] dark:bg-slate-900/45'
+                                            }`}
+                                        >
+                                            {item.label}
+                                        </button>
+                                    ))}
+                                    <button
+                                        onClick={() => {
+                                            setSaveDraft(makeBlankDraft(currentProject?.systemPrompt ?? ''));
+                                            setShowSaveModal(true);
+                                        }}
+                                        className="ml-auto inline-flex items-center gap-2 rounded-full bg-[var(--asset-primary)] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-cyan-950/15"
+                                    >
+                                        <Plus size={15} />
+                                        {currentProject?.systemPrompt.trim() ? '从当前 Prompt 新建' : '新建资产'}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
-                    {view === 'list' && (
-                        <div className="mt-5 space-y-3">
-                            <div className="relative">
-                                <Search
-                                    size={16}
-                                    className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"
-                                />
-                                <input
-                                    type="text"
-                                    value={query}
-                                    onChange={(event) => setQuery(event.target.value)}
-                                    placeholder="搜索资产名称"
-                                    className="w-full rounded-[20px] border border-white/60 bg-white/80 py-3 pl-11 pr-4 text-sm text-[var(--foreground)] shadow-sm outline-none ring-0 placeholder:text-[var(--muted-foreground)] dark:bg-slate-900/55"
-                                />
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2">
-                                {[
-                                    { label: '全部', value: 'all' as const },
-                                    { label: '生效中', value: 'active' as const },
-                                    { label: '已归档', value: 'archived' as const },
-                                ].map((item) => (
-                                    <button
-                                        key={item.value}
-                                        onClick={() => setFilter(item.value)}
-                                        className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                                            filter === item.value
-                                                ? 'bg-[var(--asset-primary)] text-white shadow-lg shadow-cyan-950/15'
-                                                : 'border border-white/70 bg-white/70 text-[var(--muted-foreground)] hover:text-[var(--foreground)] dark:bg-slate-900/45'
-                                        }`}
-                                    >
-                                        {item.label}
-                                    </button>
-                                ))}
-                                <button
-                                    onClick={() => {
-                                        setSaveDraft(makeBlankDraft(currentProject?.systemPrompt ?? ''));
-                                        setShowSaveModal(true);
-                                    }}
-                                    className="ml-auto inline-flex items-center gap-2 rounded-full bg-[var(--asset-primary)] px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-cyan-950/15"
-                                >
-                                    <Plus size={15} />
-                                    新建资产
-                                </button>
-                            </div>
+                    <div className="flex-1 overflow-hidden">
+                        {view === 'list' && <div className="h-full overflow-y-auto px-5 py-5 sm:px-6">{renderListState()}</div>}
+                        {view === 'detail' && renderDetailState()}
+                        {view === 'edit' && renderEditState()}
+                        {view === 'history' && renderHistoryState()}
+                    </div>
+
+                    {toast && (
+                        <div
+                            className={`pointer-events-none absolute bottom-5 left-1/2 z-20 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-full border px-4 py-3 text-sm font-medium shadow-xl shadow-slate-900/10 backdrop-blur ${toastToneClass}`}
+                        >
+                            {toast.message}
                         </div>
                     )}
-                </div>
 
-                <div className="flex-1 overflow-hidden">
-                    {view === 'list' && <div className="h-full overflow-y-auto px-5 py-5">{renderListState()}</div>}
-                    {view === 'detail' && renderDetailState()}
-                    {view === 'edit' && renderEditState()}
-                    {view === 'history' && renderHistoryState()}
-                </div>
-
-                {toast && (
-                    <div
-                        className={`pointer-events-none absolute bottom-5 left-1/2 z-20 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-full border px-4 py-3 text-sm font-medium shadow-xl shadow-slate-900/10 backdrop-blur ${toastToneClass}`}
-                    >
-                        {toast.message}
-                    </div>
-                )}
-
-                {showSaveModal && (
+                    {showSaveModal && (
                     <Modal
                         title="保存为资产"
                         description="创建后会生成 v1，并保留当前项目里的 prompt 内容。"
@@ -1209,7 +1232,7 @@ export default function PromptAssetDrawer() {
                     </Modal>
                 )}
 
-                {showApplyConfirm && selectedAssetDetail && (
+                    {showApplyConfirm && selectedAssetDetail && (
                     <Modal
                         title="应用到当前项目？"
                         description="这会替换当前项目中的 System Prompt，但不会修改资产库内容。"
@@ -1243,7 +1266,7 @@ export default function PromptAssetDrawer() {
                     </Modal>
                 )}
 
-                {showRestoreConfirm && selectedHistoryVersion && selectedAssetDetail && (
+                    {showRestoreConfirm && selectedHistoryVersion && selectedAssetDetail && (
                     <Modal
                         title="恢复这个版本？"
                         description="系统会基于该历史版本创建一个新的当前版本，原有历史不会丢失。"
@@ -1277,8 +1300,9 @@ export default function PromptAssetDrawer() {
                             </button>
                         </div>
                     </Modal>
-                )}
-            </aside>
+                    )}
+                </div>
+            </div>
         </div>
     );
 }

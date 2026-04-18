@@ -1,16 +1,16 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useEditorActions, useEditorState } from '../contexts/EditorContext';
 import { FolderOpen, Save, Settings, Download, Upload, Code, FileJson, Sparkles } from 'lucide-react';
 import { exportToXmlPrompt, exportToMessageJson } from '../lib/utils';
 
 function Header() {
-    const { currentProject, isSaving, error, showPromptAssets, showProjectList } = useEditorState();
+    const { currentProject, isSaving, error, showProjectList } = useEditorState();
     const {
         toggleProjectList,
         toggleApiConfig,
-        togglePromptAssets,
         saveProject,
         renameProject,
     } = useEditorActions();
@@ -226,18 +226,14 @@ function Header() {
 
                 <div className="w-px h-5 bg-[var(--border)] mx-1 hidden sm:block" />
 
-                <button
-                    onClick={() => togglePromptAssets('browse')}
-                    className={`inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium transition-colors duration-[var(--transition-fast)] active:scale-95 ${
-                        showPromptAssets
-                            ? 'bg-[var(--asset-primary-soft)] text-[var(--asset-primary)]'
-                            : 'text-[var(--muted-foreground)] hover:bg-[var(--muted)]'
-                    }`}
+                <Link
+                    href="/prompt-assets"
+                    className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-[var(--muted-foreground)] transition-colors duration-[var(--transition-fast)] hover:bg-[var(--muted)] active:scale-95"
                     title="提示词资产库"
                 >
                     <Sparkles size={16} />
                     <span className="hidden md:inline">提示词资产库</span>
-                </button>
+                </Link>
 
                 <button
                     onClick={toggleApiConfig}

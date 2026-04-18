@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useEditorActions, useEditorState } from '../contexts/EditorContext';
 import { ChevronDown, ChevronRight, Terminal, Eye, Pencil, Sparkles, BookmarkPlus, X } from 'lucide-react';
 import AutoResizeTextarea from './ui/AutoResizeTextarea';
@@ -8,7 +9,8 @@ import MarkdownPreview from './ui/MarkdownPreview';
 
 function SystemPromptEditor() {
     const { currentProject, promptAssetNotice } = useEditorState();
-    const { updateSystemPrompt, openPromptAssets, setPromptAssetNotice } = useEditorActions();
+    const { updateSystemPrompt, setPromptAssetNotice } = useEditorActions();
+    const router = useRouter();
 
     const [isExpanded, setIsExpanded] = useState(true);
     const [isPreview, setIsPreview] = useState(false);
@@ -80,15 +82,17 @@ function SystemPromptEditor() {
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                         <div className="flex flex-wrap items-center gap-2">
                             <button
-                                onClick={() => openPromptAssets('browse')}
+                                onClick={() => router.push('/prompt-assets')}
                                 className="inline-flex items-center gap-1.5 rounded-full bg-[var(--asset-primary-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--asset-primary)] shadow-sm hover:bg-cyan-100 dark:hover:bg-cyan-950/80"
                             >
                                 <Sparkles size={13} />
                                 从资产应用
                             </button>
                             <button
-                                onClick={() => openPromptAssets('save')}
-                                className="inline-flex items-center gap-1.5 rounded-full border border-yellow-300/60 bg-white/60 px-3 py-1.5 text-xs font-semibold text-yellow-800 shadow-sm hover:bg-yellow-100/80 dark:border-yellow-800/50 dark:bg-yellow-950/20 dark:text-yellow-300 dark:hover:bg-yellow-900/30"
+                                onClick={() => router.push('/prompt-assets?entry=save')}
+                                disabled={!currentProject.systemPrompt.trim()}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-yellow-300/60 bg-white/60 px-3 py-1.5 text-xs font-semibold text-yellow-800 shadow-sm hover:bg-yellow-100/80 disabled:cursor-not-allowed disabled:opacity-45 dark:border-yellow-800/50 dark:bg-yellow-950/20 dark:text-yellow-300 dark:hover:bg-yellow-900/30"
+                                title={currentProject.systemPrompt.trim() ? '保存为资产' : '当前 System Prompt 为空，无法保存为资产'}
                             >
                                 <BookmarkPlus size={13} />
                                 保存为资产
