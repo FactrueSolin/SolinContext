@@ -11,11 +11,22 @@ const AutoResizeTextarea = React.forwardRef<HTMLTextAreaElement, AutoResizeTexta
     ({ minHeight = 80, value, className = '', style, ...rest }, forwardedRef) => {
         const internalRef = useRef<HTMLTextAreaElement>(null);
         const previousValueRef = useRef<string>('');
-        // 使用 forwardedRef 或 internalRef
-        const textareaRef = forwardedRef || internalRef;
+
+        const setTextareaRef = useCallback((node: HTMLTextAreaElement | null) => {
+            internalRef.current = node;
+
+            if (typeof forwardedRef === 'function') {
+                forwardedRef(node);
+                return;
+            }
+
+            if (forwardedRef) {
+                forwardedRef.current = node;
+            }
+        }, [forwardedRef]);
 
         const adjustHeight = useCallback(() => {
-            const textarea = 'current' in textareaRef ? textareaRef.current : textareaRef;
+            const textarea = internalRef.current;
             if (!textarea) return;
 
             const nextValue = typeof value === 'string' ? value : '';
@@ -34,7 +45,7 @@ const AutoResizeTextarea = React.forwardRef<HTMLTextAreaElement, AutoResizeTexta
             }
 
             previousValueRef.current = nextValue;
-        }, [textareaRef, minHeight]);
+        }, [minHeight, value]);
 
         // 内容变化时调整高度
         useLayoutEffect(() => {
@@ -49,7 +60,7 @@ const AutoResizeTextarea = React.forwardRef<HTMLTextAreaElement, AutoResizeTexta
 
         return (
             <textarea
-                ref={textareaRef}
+                ref={setTextareaRef}
                 value={value}
                 className={className}
                 style={{

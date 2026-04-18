@@ -1,0 +1,290 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "9076f298-edaf-4698-ac36-1532cfedd35a",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "prompt_asset_versions": {
+      "name": "prompt_asset_versions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "asset_id": {
+          "name": "asset_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version_number": {
+          "name": "version_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name_snapshot": {
+          "name": "name_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description_snapshot": {
+          "name": "description_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "change_note": {
+          "name": "change_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "operation_type": {
+          "name": "operation_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_version_id": {
+          "name": "source_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "uq_prompt_asset_versions_asset_version": {
+          "name": "uq_prompt_asset_versions_asset_version",
+          "columns": [
+            "asset_id",
+            "version_number"
+          ],
+          "isUnique": true
+        },
+        "idx_prompt_asset_versions_asset_created_at": {
+          "name": "idx_prompt_asset_versions_asset_created_at",
+          "columns": [
+            "asset_id",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "idx_prompt_asset_versions_source_version_id": {
+          "name": "idx_prompt_asset_versions_source_version_id",
+          "columns": [
+            "source_version_id"
+          ],
+          "isUnique": false
+        },
+        "idx_prompt_asset_versions_content_hash": {
+          "name": "idx_prompt_asset_versions_content_hash",
+          "columns": [
+            "content_hash"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "prompt_asset_versions_asset_id_prompt_assets_id_fk": {
+          "name": "prompt_asset_versions_asset_id_prompt_assets_id_fk",
+          "tableFrom": "prompt_asset_versions",
+          "tableTo": "prompt_assets",
+          "columnsFrom": [
+            "asset_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "prompt_asset_versions_source_version_id_prompt_asset_versions_id_fk": {
+          "name": "prompt_asset_versions_source_version_id_prompt_asset_versions_id_fk",
+          "tableFrom": "prompt_asset_versions",
+          "tableTo": "prompt_asset_versions",
+          "columnsFrom": [
+            "source_version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_prompt_asset_versions_version_number": {
+          "name": "ck_prompt_asset_versions_version_number",
+          "value": "\"prompt_asset_versions\".\"version_number\" >= 1"
+        },
+        "ck_prompt_asset_versions_name_length": {
+          "name": "ck_prompt_asset_versions_name_length",
+          "value": "length(trim(\"prompt_asset_versions\".\"name_snapshot\")) between 1 and 120"
+        },
+        "ck_prompt_asset_versions_content": {
+          "name": "ck_prompt_asset_versions_content",
+          "value": "length(\"prompt_asset_versions\".\"content\") > 0"
+        },
+        "ck_prompt_asset_versions_operation_type": {
+          "name": "ck_prompt_asset_versions_operation_type",
+          "value": "\"prompt_asset_versions\".\"operation_type\" in ('create', 'update', 'restore', 'import')"
+        }
+      }
+    },
+    "prompt_assets": {
+      "name": "prompt_assets",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "current_version_number": {
+          "name": "current_version_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_prompt_assets_status_updated_at": {
+          "name": "idx_prompt_assets_status_updated_at",
+          "columns": [
+            "status",
+            "updated_at"
+          ],
+          "isUnique": false
+        },
+        "idx_prompt_assets_name": {
+          "name": "idx_prompt_assets_name",
+          "columns": [
+            "name"
+          ],
+          "isUnique": false
+        },
+        "idx_prompt_assets_created_at": {
+          "name": "idx_prompt_assets_created_at",
+          "columns": [
+            "created_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ck_prompt_assets_name_length": {
+          "name": "ck_prompt_assets_name_length",
+          "value": "length(trim(\"prompt_assets\".\"name\")) between 1 and 120"
+        },
+        "ck_prompt_assets_current_version": {
+          "name": "ck_prompt_assets_current_version",
+          "value": "\"prompt_assets\".\"current_version_number\" >= 1"
+        },
+        "ck_prompt_assets_status": {
+          "name": "ck_prompt_assets_status",
+          "value": "\"prompt_assets\".\"status\" in ('active', 'archived')"
+        },
+        "ck_prompt_assets_archive_state": {
+          "name": "ck_prompt_assets_archive_state",
+          "value": "(\n                (\"prompt_assets\".\"status\" = 'archived' and \"prompt_assets\".\"archived_at\" is not null)\n                or\n                (\"prompt_assets\".\"status\" = 'active' and \"prompt_assets\".\"archived_at\" is null)\n            )"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}
