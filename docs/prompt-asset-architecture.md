@@ -2,7 +2,8 @@
 
 ## 补充说明
 
-数据库详细设计见 [prompt-asset-database-design.md](/var/tmp/vibe-kanban/worktrees/fe0f-/aicontext/docs/prompt-asset-database-design.md)。
+- 后端技术规范见 [prompt-asset-backend-spec.md](./prompt-asset-backend-spec.md)
+- 数据库详细设计见 [prompt-asset-database-design.md](./prompt-asset-database-design.md)
 
 ## 1. 背景
 
@@ -139,7 +140,6 @@ SQLite 负责：
 - `id`
 - `name`
 - `description`
-- `currentVersionId`
 - `currentVersionNumber`
 - `status`
 - `createdAt`
@@ -169,8 +169,7 @@ SQLite 负责：
 | `id` | `text` | 主键，建议 `cuid`/`uuid` |
 | `name` | `text` | 当前名称 |
 | `description` | `text` | 当前描述 |
-| `current_version_id` | `text` | 指向当前版本 |
-| `current_version_number` | `integer` | 当前版本号 |
+| `current_version_number` | `integer` | 当前版本号，作为第一阶段唯一当前版本指针 |
 | `status` | `text` | `active` / `archived` |
 | `created_at` | `integer` | Unix ms |
 | `updated_at` | `integer` | Unix ms |
@@ -195,7 +194,7 @@ SQLite 负责：
 | `description_snapshot` | `text` | 该版本的描述快照 |
 | `content` | `text` | 提示词正文 |
 | `change_note` | `text nullable` | 版本说明 |
-| `content_hash` | `text nullable` | 内容哈希，用于去重或审计 |
+| `content_hash` | `text` | 内容哈希，用于去重或审计 |
 | `created_at` | `integer` | Unix ms |
 
 约束建议：
@@ -219,7 +218,6 @@ export const promptAssets = sqliteTable('prompt_assets', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   description: text('description').notNull().default(''),
-  currentVersionId: text('current_version_id'),
   currentVersionNumber: integer('current_version_number').notNull().default(1),
   status: text('status', { enum: ['active', 'archived'] }).notNull().default('active'),
   createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
@@ -237,7 +235,9 @@ export const promptAssetVersions = sqliteTable(
     descriptionSnapshot: text('description_snapshot').notNull().default(''),
     content: text('content').notNull(),
     changeNote: text('change_note'),
-    contentHash: text('content_hash'),
+    contentHash: text('content_hash').notNull(),
+    operationType: text('operation_type', { enum: ['create', 'update', 'restore', 'import'] }).notNull(),
+    sourceVersionId: text('source_version_id'),
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
   },
   (table) => ({
@@ -254,7 +254,7 @@ export const promptAssetVersions = sqliteTable(
 
 1. 插入 `prompt_assets`
 2. 插入 `prompt_asset_versions(version_number = 1)`
-3. 回写 `prompt_assets.current_version_id`
+3. 提交事务，由 `prompt_assets.current_version_number = 1` 表示当前版本
 
 ## 6.2 更新资产
 
@@ -262,7 +262,7 @@ export const promptAssetVersions = sqliteTable(
 
 1. 读取当前版本号
 2. 新增 `version_number + 1`
-3. 更新 `prompt_assets` 当前态和版本指针
+3. 更新 `prompt_assets` 当前态和 `current_version_number`
 
 ## 6.3 回滚版本
 
@@ -271,7 +271,7 @@ export const promptAssetVersions = sqliteTable(
 1. 读取目标历史版本
 2. 复制该版本内容生成一个新版本
 3. 新版本号继续递增
-4. 更新 `prompt_assets.current_version_id`
+4. 更新 `prompt_assets.current_version_number`
 
 这样可以保留完整操作链。
 
@@ -286,7 +286,9 @@ export const promptAssetVersions = sqliteTable(
 
 ## 7. API 设计
 
-保持与现有 `/api/projects/**` 一致的风格，新增：
+正式 API 契约以后端规范 [prompt-asset-backend-spec.md](./prompt-asset-backend-spec.md) 为准。
+
+保持与现有 `/api/projects/**` 一样使用 Route Handler，但资源建模做如下收敛：
 
 ### `GET /api/prompt-assets`
 
@@ -322,13 +324,14 @@ export const promptAssetVersions = sqliteTable(
 用途：
 
 - 获取单个资产当前态
-- 可选附带最近版本列表
+- 返回当前版本详情
 
-### `PUT /api/prompt-assets/:id`
+### `POST /api/prompt-assets/:id/versions`
 
 用途：
 
 - 基于当前编辑内容创建新版本
+- 避免用 `PUT` 表达“原地更新”的歧义
 
 ### `GET /api/prompt-assets/:id/versions`
 
@@ -357,11 +360,22 @@ export const promptAssetVersions = sqliteTable(
 }
 ```
 
-### `DELETE /api/prompt-assets/:id`
+### `POST /api/prompt-assets/:id/archive`
 
-建议语义做成“归档”而不是物理删除。
+用途：
 
-如果确实需要物理删除，可单独提供管理命令，不暴露在普通 UI。
+- 归档资产
+
+### `POST /api/prompt-assets/:id/unarchive`
+
+用途：
+
+- 取消归档
+
+说明：
+
+- 第一阶段不暴露物理删除接口
+- 如果确实需要物理删除，应作为管理命令或脚本能力，而不是普通 UI API
 
 ## 8. 前端交互设计
 
@@ -445,7 +459,7 @@ export const promptAssetVersions = sqliteTable(
 1. 打开资产详情
 2. 编辑名称、描述、正文
 3. 点击保存
-4. `PUT /api/prompt-assets/:id`
+4. `POST /api/prompt-assets/:id/versions`
 5. 后端创建新版本并更新当前版本指针
 
 ## 9. 代码组织建议

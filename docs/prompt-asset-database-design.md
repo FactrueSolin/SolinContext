@@ -1,6 +1,7 @@
 # 提示词管理数据库设计方案
 
-> 基于 [prompt-asset-architecture.md](/var/tmp/vibe-kanban/worktrees/fe0f-/aicontext/docs/prompt-asset-architecture.md) 的详细数据库设计。
+> 基于 [prompt-asset-architecture.md](./prompt-asset-architecture.md) 的详细数据库设计。  
+> API 契约、服务分层和技术选型见 [prompt-asset-backend-spec.md](./prompt-asset-backend-spec.md)。
 
 ## 1. 设计目标
 
