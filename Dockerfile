@@ -2,6 +2,7 @@ FROM node:20-bookworm-slim AS base
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
+ENV COREPACK_NPM_REGISTRY="https://registry.npmmirror.com"
 
 RUN corepack enable
 
@@ -13,7 +14,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --registry=https://registry.npmmirror.com
 
 FROM base AS builder
 WORKDIR /app
