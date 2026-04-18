@@ -55,7 +55,7 @@ export default function ProjectListPanel() {
     };
 
     return (
-        <div className="absolute top-14 left-0 bottom-0 w-80 bg-[var(--panel-bg)] border-r border-[var(--border)] flex flex-col shadow-xl z-10 animate-[slideInLeft_200ms_ease-out]">
+        <div className="absolute top-0 left-0 bottom-0 z-20 flex w-80 flex-col border-r border-[var(--border)] bg-[var(--panel-bg)] shadow-xl animate-[slideInLeft_200ms_ease-out]">
             {/* Panel Header */}
             <div className="flex items-center justify-between px-4 py-3.5 border-b border-[var(--border)]">
                 <div className="flex items-center gap-2">
@@ -72,6 +72,7 @@ export default function ProjectListPanel() {
                     </button>
                     <button
                         onClick={toggleProjectList}
+                        aria-label="关闭项目列表"
                         className="p-1.5 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] text-[var(--muted-foreground)] active:scale-95"
                         title="关闭"
                     >

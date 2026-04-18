@@ -6,7 +6,7 @@ import { FolderOpen, Save, Settings, Download, Upload, Code, FileJson, Sparkles 
 import { exportToXmlPrompt, exportToMessageJson } from '../lib/utils';
 
 function Header() {
-    const { currentProject, isSaving, error, showPromptAssets } = useEditorState();
+    const { currentProject, isSaving, error, showPromptAssets, showProjectList } = useEditorState();
     const {
         toggleProjectList,
         toggleApiConfig,
@@ -102,11 +102,13 @@ function Header() {
     const tooltipBaseClass = "absolute -bottom-9 left-1/2 -translate-x-1/2 px-2.5 py-1 bg-[var(--tooltip-bg)] text-[var(--tooltip-text)] text-xs rounded-md whitespace-nowrap shadow-lg pointer-events-none";
 
     return (
-        <header className="flex items-center justify-between h-14 px-3 sm:px-4 border-b border-[var(--border)] bg-[var(--header-bg)] backdrop-blur-sm z-20">
+        <header className="relative z-30 flex h-14 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--header-bg)] px-3 backdrop-blur-sm sm:px-4">
             {/* Left: Logo & Project List Toggle */}
             <div className="flex items-center gap-2 min-w-0">
                 <button
                     onClick={toggleProjectList}
+                    aria-label="切换项目列表"
+                    aria-pressed={showProjectList}
                     className="p-2 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] active:scale-95"
                     title="项目列表"
                 >

@@ -26,7 +26,7 @@ export default function Home() {
     <div className="flex flex-col h-screen overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
       <Header />
 
-      <div className="flex-1 relative flex overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <ProjectListPanel />
         <ApiConfigPanel />
         <PromptAssetDrawer />

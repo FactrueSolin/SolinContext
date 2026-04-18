@@ -81,7 +81,7 @@ export default function ApiConfigPanel() {
         }`;
 
     return (
-        <div className="absolute top-14 right-0 bottom-0 w-80 bg-[var(--panel-bg)] border-l border-[var(--border)] flex flex-col shadow-xl z-10 animate-[slideInRight_200ms_ease-out]">
+        <div className="absolute top-0 right-0 bottom-0 z-20 flex w-80 flex-col border-l border-[var(--border)] bg-[var(--panel-bg)] shadow-xl animate-[slideInRight_200ms_ease-out]">
             {/* Panel Header */}
             <div className="flex items-center justify-between px-4 py-3.5 border-b border-[var(--border)]">
                 <div className="flex items-center gap-2">
