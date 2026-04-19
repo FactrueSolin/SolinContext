@@ -9,6 +9,7 @@ import {
     ArrowLeft,
     Check,
     Clock3,
+    Copy,
     History,
     Pencil,
     Plus,
@@ -58,6 +59,14 @@ interface AssetDraft {
     description: string;
     content: string;
     changeNote: string;
+}
+
+interface CopyPromptButtonProps {
+    onClick: () => void;
+    isBusy: boolean;
+    isCopied: boolean;
+    compact?: boolean;
+    className?: string;
 }
 
 function formatRelativeTime(value: number) {
@@ -148,6 +157,38 @@ function StatusPill({ status }: { status: PromptAssetStatus }) {
         >
             {status === 'archived' ? '已归档' : '生效中'}
         </span>
+    );
+}
+
+function getAssetCopyTargetId(assetId: string) {
+    return `asset:${assetId}`;
+}
+
+function getVersionCopyTargetId(versionId: string) {
+    return `version:${versionId}`;
+}
+
+function CopyPromptButton({
+    onClick,
+    isBusy,
+    isCopied,
+    compact = false,
+    className = '',
+}: CopyPromptButtonProps) {
+    const label = isBusy ? '复制中...' : isCopied ? '已复制' : compact ? '复制' : '复制提示词';
+
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            disabled={isBusy}
+            className={`inline-flex items-center justify-center gap-2 rounded-full border border-[var(--border)] bg-white/85 font-semibold text-[var(--foreground)] shadow-sm transition hover:bg-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-45 dark:bg-slate-900/50 ${
+                compact ? 'px-3 py-1.5 text-xs' : 'px-3.5 py-2 text-sm'
+            } ${className}`}
+        >
+            {isCopied ? <Check size={14} /> : <Copy size={14} />}
+            {label}
+        </button>
     );
 }
 
@@ -248,11 +289,15 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
     const [showRestoreConfirm, setShowRestoreConfirm] = useState(false);
     const [toast, setToast] = useState<ToastState | null>(null);
     const [pendingAction, setPendingAction] = useState<PendingAction>(null);
+    const [copyingTargetId, setCopyingTargetId] = useState<string | null>(null);
+    const [copiedTargetId, setCopiedTargetId] = useState<string | null>(null);
     const currentProjectPromptRef = useRef(currentProject?.systemPrompt ?? '');
     const listRequestIdRef = useRef(0);
     const detailRequestIdRef = useRef(0);
     const historyRequestIdRef = useRef(0);
     const lastHandledEntryRef = useRef<string | null>(null);
+    const detailCacheRef = useRef<Record<string, PromptAssetDetail>>({});
+    const copyResetTimerRef = useRef<number | null>(null);
 
     const selectedHistoryVersion = useMemo(
         () => versions.find((version) => version.id === historyVersionId) ?? null,
@@ -262,6 +307,48 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
     useEffect(() => {
         currentProjectPromptRef.current = currentProject?.systemPrompt ?? '';
     }, [currentProject?.systemPrompt]);
+
+    useEffect(
+        () => () => {
+            if (copyResetTimerRef.current !== null) {
+                window.clearTimeout(copyResetTimerRef.current);
+            }
+        },
+        []
+    );
+
+    const cachePromptAssetDetail = useCallback((detail: PromptAssetDetail) => {
+        detailCacheRef.current[detail.id] = detail;
+    }, []);
+
+    const markCopySuccess = useCallback((targetId: string) => {
+        setCopiedTargetId(targetId);
+
+        if (copyResetTimerRef.current !== null) {
+            window.clearTimeout(copyResetTimerRef.current);
+        }
+
+        copyResetTimerRef.current = window.setTimeout(() => {
+            setCopiedTargetId((current) => (current === targetId ? null : current));
+            copyResetTimerRef.current = null;
+        }, 1800);
+    }, []);
+
+    const copyPromptToClipboard = useCallback(
+        async (targetId: string, content: string, successMessage: string) => {
+            if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+                throw new Error('当前环境不支持复制。');
+            }
+
+            await navigator.clipboard.writeText(content);
+            markCopySuccess(targetId);
+            setToast({
+                tone: 'success',
+                message: successMessage,
+            });
+        },
+        [markCopySuccess]
+    );
 
     const loadAssetsForCurrentFilters = useCallback(async () => {
         const requestId = ++listRequestIdRef.current;
@@ -317,6 +404,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
 
             setSelectedAssetId(detail.id);
             setSelectedAssetDetail(detail);
+            cachePromptAssetDetail(detail);
             setHistoryVersionId(detail.currentVersion.id);
             setAssets((current) =>
                 sortSummaries([toSummary(detail), ...current.filter((item) => item.id !== detail.id)])
@@ -332,7 +420,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                 setPendingAction(null);
             }
         }
-    }, [workspaceSlug]);
+    }, [cachePromptAssetDetail, workspaceSlug]);
 
     const loadAssetHistory = useCallback(async (assetId: string, preferredVersionId?: string | null) => {
         const requestId = ++historyRequestIdRef.current;
@@ -434,6 +522,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                 ? await createPromptAsset(workspaceSlug, payload)
                 : await createPromptAsset(payload);
 
+            cachePromptAssetDetail(detail);
             setSelectedAssetId(detail.id);
             setSelectedAssetDetail(detail);
             setHistoryVersionId(detail.currentVersion.id);
@@ -484,6 +573,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                 ? await createPromptAssetVersion(workspaceSlug, selectedAssetDetail.id, payload)
                 : await createPromptAssetVersion(selectedAssetDetail.id, payload);
 
+            cachePromptAssetDetail(detail);
             setSelectedAssetDetail(detail);
             setHistoryVersionId(detail.currentVersion.id);
             setVersions([]);
@@ -530,9 +620,17 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                           status: summary.status,
                           updatedAt: summary.updatedAt,
                           archivedAt: summary.archivedAt,
-                      }
+                    }
                     : current
             );
+            if (detailCacheRef.current[summary.id]) {
+                detailCacheRef.current[summary.id] = {
+                    ...detailCacheRef.current[summary.id],
+                    status: summary.status,
+                    updatedAt: summary.updatedAt,
+                    archivedAt: summary.archivedAt,
+                };
+            }
 
             setAssets((current) =>
                 sortSummaries([summary, ...current.filter((item) => item.id !== summary.id)])
@@ -552,6 +650,61 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
             setPendingAction(null);
         }
     };
+
+    const handleCopyAssetPrompt = useCallback(
+        async (assetId: string, assetName: string, expectedVersionNumber: number) => {
+            const targetId = getAssetCopyTargetId(assetId);
+            setCopyingTargetId(targetId);
+
+            try {
+                const matchingSelectedDetail =
+                    selectedAssetDetail?.id === assetId &&
+                    selectedAssetDetail.currentVersionNumber === expectedVersionNumber
+                        ? selectedAssetDetail
+                        : null;
+                const matchingCachedDetail =
+                    detailCacheRef.current[assetId]?.currentVersionNumber === expectedVersionNumber
+                        ? detailCacheRef.current[assetId]
+                        : null;
+                const detail =
+                    matchingSelectedDetail ??
+                    matchingCachedDetail ??
+                          (workspaceSlug
+                              ? await getPromptAssetDetail(workspaceSlug, assetId)
+                              : await getPromptAssetDetail(assetId));
+
+                cachePromptAssetDetail(detail);
+                await copyPromptToClipboard(targetId, detail.currentVersion.content, `已复制「${assetName}」提示词。`);
+            } catch (error) {
+                setToast({
+                    tone: 'error',
+                    message: getPromptAssetErrorMessage(error, '复制提示词失败。'),
+                });
+            } finally {
+                setCopyingTargetId((current) => (current === targetId ? null : current));
+            }
+        },
+        [cachePromptAssetDetail, copyPromptToClipboard, selectedAssetDetail, workspaceSlug]
+    );
+
+    const handleCopyVersionPrompt = useCallback(
+        async (versionId: string, versionNumber: number, content: string) => {
+            const targetId = getVersionCopyTargetId(versionId);
+            setCopyingTargetId(targetId);
+
+            try {
+                await copyPromptToClipboard(targetId, content, `已复制 v${versionNumber} 提示词。`);
+            } catch (error) {
+                setToast({
+                    tone: 'error',
+                    message: getPromptAssetErrorMessage(error, '复制提示词失败。'),
+                });
+            } finally {
+                setCopyingTargetId((current) => (current === targetId ? null : current));
+            }
+        },
+        [copyPromptToClipboard]
+    );
 
     const handleApplyAsset = () => {
         if (!selectedAssetDetail || !currentProject) {
@@ -593,6 +746,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                 ? await restorePromptAssetVersion(workspaceSlug, selectedAssetDetail.id, payload)
                 : await restorePromptAssetVersion(selectedAssetDetail.id, payload);
 
+            cachePromptAssetDetail(detail);
             setSelectedAssetDetail(detail);
             setHistoryVersionId(detail.currentVersion.id);
             setShowRestoreConfirm(false);
@@ -636,15 +790,19 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
 
         if (isLoadingList && assets.length === 0) {
             return (
-                <div className="space-y-3">
-                    {Array.from({ length: 5 }).map((_, index) => (
+                <div className="grid gap-3 md:grid-cols-2">
+                    {Array.from({ length: 6 }).map((_, index) => (
                         <div
                             key={`asset-skeleton-${index}`}
-                            className="overflow-hidden rounded-[24px] border border-white/50 bg-white/70 p-4 dark:bg-slate-900/40"
+                            className="overflow-hidden rounded-[22px] border border-white/50 bg-white/70 p-4 dark:bg-slate-900/40"
                         >
-                            <div className="h-4 w-32 animate-pulse rounded-full bg-[var(--muted)]" />
+                            <div className="h-4 w-28 animate-pulse rounded-full bg-[var(--muted)]" />
                             <div className="mt-3 h-3 w-full animate-pulse rounded-full bg-[var(--muted)]" />
-                            <div className="mt-2 h-3 w-3/4 animate-pulse rounded-full bg-[var(--muted)]" />
+                            <div className="mt-2 h-3 w-4/5 animate-pulse rounded-full bg-[var(--muted)]" />
+                            <div className="mt-6 flex items-center justify-between gap-3">
+                                <div className="h-3 w-20 animate-pulse rounded-full bg-[var(--muted)]" />
+                                <div className="h-8 w-24 animate-pulse rounded-full bg-[var(--muted)]" />
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -682,33 +840,56 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
         }
 
         return (
-            <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2">
                 {assets.map((asset) => (
-                    <button
+                    <article
                         key={asset.id}
-                        onClick={() => handleOpenDetail(asset.id)}
-                        className="group w-full rounded-[24px] border border-white/60 bg-white/75 p-4 text-left shadow-sm shadow-slate-900/5 transition-all hover:-translate-y-0.5 hover:border-[var(--asset-primary)]/35 hover:shadow-lg hover:shadow-cyan-950/10 dark:bg-slate-900/40"
+                        className="group flex h-full flex-col rounded-[22px] border border-white/60 bg-white/80 p-4 shadow-sm shadow-slate-900/5 transition-all hover:-translate-y-0.5 hover:border-[var(--asset-primary)]/35 hover:shadow-lg hover:shadow-cyan-950/10 dark:bg-slate-900/40"
                     >
-                        <div className="flex items-start justify-between gap-3">
-                            <div>
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <h3 className="text-[15px] font-semibold text-[var(--foreground)]">
-                                        {asset.name}
-                                    </h3>
-                                    <StatusPill status={asset.status} />
+                        <button
+                            type="button"
+                            onClick={() => handleOpenDetail(asset.id)}
+                            className="flex flex-1 flex-col text-left"
+                        >
+                            <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <h3 className="truncate text-[15px] font-semibold text-[var(--foreground)]">
+                                            {asset.name}
+                                        </h3>
+                                        <StatusPill status={asset.status} />
+                                    </div>
+                                    <p className="mt-2 line-clamp-2 text-[13px] leading-5 text-[var(--muted-foreground)]">
+                                        {asset.description || '未填写描述'}
+                                    </p>
                                 </div>
-                                <p className="mt-2 line-clamp-2 text-sm leading-6 text-[var(--muted-foreground)]">
-                                    {asset.description || '未填写描述'}
-                                </p>
+                                <div className="shrink-0 rounded-full bg-[var(--asset-primary-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--asset-primary)]">
+                                    v{asset.currentVersionNumber}
+                                </div>
                             </div>
-                            <div className="rounded-full bg-[var(--asset-primary-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--asset-primary)]">
-                                v{asset.currentVersionNumber}
+                            <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-xs text-[var(--muted-foreground)]">
+                                <span className="inline-flex items-center gap-1.5">
+                                    <Clock3 size={12} />
+                                    {formatRelativeTime(asset.updatedAt)}
+                                </span>
+                                <span className="text-[11px] uppercase tracking-[0.18em]">打开详情</span>
                             </div>
+                        </button>
+                        <div className="mt-3 flex items-center justify-end">
+                            <CopyPromptButton
+                                onClick={() =>
+                                    void handleCopyAssetPrompt(
+                                        asset.id,
+                                        asset.name,
+                                        asset.currentVersionNumber
+                                    )
+                                }
+                                isBusy={copyingTargetId === getAssetCopyTargetId(asset.id)}
+                                isCopied={copiedTargetId === getAssetCopyTargetId(asset.id)}
+                                compact
+                            />
                         </div>
-                        <div className="mt-4 flex items-center justify-end text-xs text-[var(--muted-foreground)]">
-                            <span>{formatRelativeTime(asset.updatedAt)}</span>
-                        </div>
-                    </button>
+                    </article>
                 ))}
             </div>
         );
@@ -814,8 +995,8 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                     </div>
                 </div>
                 <div className="flex-1 overflow-y-auto px-5 py-5">
-                    <div className="rounded-[28px] border border-white/60 bg-white/75 p-4 shadow-sm dark:bg-slate-900/40">
-                        <div className="flex items-center justify-between gap-3">
+                    <div className="rounded-[24px] border border-white/60 bg-white/80 p-4 shadow-sm dark:bg-slate-900/40">
+                        <div className="flex flex-col gap-3 border-b border-white/60 pb-4 sm:flex-row sm:items-start sm:justify-between">
                             <div>
                                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--muted-foreground)]">
                                     Prompt Preview
@@ -824,13 +1005,28 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                                     当前版本说明：{selectedAssetDetail.currentVersion.changeNote || '未填写'}
                                 </p>
                             </div>
-                            <div className="rounded-full border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--muted-foreground)]">
-                                {selectedAssetDetail.currentVersion.content.length} 字符
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="rounded-full border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--muted-foreground)]">
+                                    {selectedAssetDetail.currentVersion.content.length} 字符
+                                </div>
+                                <CopyPromptButton
+                                    onClick={() =>
+                                        void handleCopyAssetPrompt(
+                                            selectedAssetDetail.id,
+                                            selectedAssetDetail.name,
+                                            selectedAssetDetail.currentVersionNumber
+                                        )
+                                    }
+                                    isBusy={copyingTargetId === getAssetCopyTargetId(selectedAssetDetail.id)}
+                                    isCopied={copiedTargetId === getAssetCopyTargetId(selectedAssetDetail.id)}
+                                />
                             </div>
                         </div>
-                        <pre className="mt-4 whitespace-pre-wrap rounded-[22px] bg-[var(--asset-preview-bg)] p-4 font-mono text-[13px] leading-6 text-[var(--foreground)]">
-                            {selectedAssetDetail.currentVersion.content}
-                        </pre>
+                        <div className="mt-4 overflow-hidden rounded-[22px] border border-white/70 bg-[var(--asset-preview-bg)]/95 shadow-inner shadow-slate-900/5">
+                            <pre className="max-h-[min(52vh,34rem)] overflow-auto whitespace-pre-wrap break-words px-4 py-4 font-mono text-[13px] leading-6 text-[var(--foreground)]">
+                                {selectedAssetDetail.currentVersion.content}
+                            </pre>
+                        </div>
                         {selectedAssetDetail.status === 'archived' && (
                             <p className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-300">
                                 当前资产已归档，可继续浏览和应用，但需要恢复后才能新增版本。
@@ -1065,8 +1261,8 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                                             恢复为当前版本
                                         </button>
                                     </div>
-                                    <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                                        <div>
+                                    <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                                        <div className="rounded-[22px] border border-white/60 bg-white/80 p-4 shadow-sm dark:bg-slate-900/30">
                                             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
                                                 名称快照
                                             </p>
@@ -1077,9 +1273,46 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                                                 {selectedHistoryVersion.descriptionSnapshot || '未填写描述'}
                                             </p>
                                         </div>
-                                        <pre className="whitespace-pre-wrap rounded-[22px] bg-[var(--asset-preview-bg)] p-4 font-mono text-[13px] leading-6 text-[var(--foreground)]">
-                                            {selectedHistoryVersion.content}
-                                        </pre>
+                                        <div className="rounded-[22px] border border-white/60 bg-white/80 p-4 shadow-sm dark:bg-slate-900/30">
+                                            <div className="flex flex-col gap-3 border-b border-white/60 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                                                <div>
+                                                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--muted-foreground)]">
+                                                        Prompt Snapshot
+                                                    </p>
+                                                    <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+                                                        可直接复制该历史版本正文。
+                                                    </p>
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <div className="rounded-full border border-[var(--border)] px-2.5 py-1 text-xs text-[var(--muted-foreground)]">
+                                                        {selectedHistoryVersion.content.length} 字符
+                                                    </div>
+                                                    <CopyPromptButton
+                                                        onClick={() =>
+                                                            void handleCopyVersionPrompt(
+                                                                selectedHistoryVersion.id,
+                                                                selectedHistoryVersion.versionNumber,
+                                                                selectedHistoryVersion.content
+                                                            )
+                                                        }
+                                                        isBusy={
+                                                            copyingTargetId ===
+                                                            getVersionCopyTargetId(selectedHistoryVersion.id)
+                                                        }
+                                                        isCopied={
+                                                            copiedTargetId ===
+                                                            getVersionCopyTargetId(selectedHistoryVersion.id)
+                                                        }
+                                                        compact
+                                                    />
+                                                </div>
+                                            </div>
+                                            <div className="mt-4 overflow-hidden rounded-[20px] border border-white/70 bg-[var(--asset-preview-bg)]/95 shadow-inner shadow-slate-900/5">
+                                                <pre className="max-h-[24rem] overflow-auto whitespace-pre-wrap break-words px-4 py-4 font-mono text-[13px] leading-6 text-[var(--foreground)]">
+                                                    {selectedHistoryVersion.content}
+                                                </pre>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             )}

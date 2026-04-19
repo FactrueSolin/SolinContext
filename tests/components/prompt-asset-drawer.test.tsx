@@ -11,6 +11,7 @@ const {
     mockEditor,
     clientMocks,
     MockPromptAssetApiError,
+    mockClipboardWriteText,
 } = vi.hoisted(() => {
     class MockPromptAssetApiError extends Error {
         readonly status: number;
@@ -48,6 +49,7 @@ const {
             archivePromptAsset: vi.fn(),
             unarchivePromptAsset: vi.fn(),
         },
+        mockClipboardWriteText: vi.fn(),
         MockPromptAssetApiError,
     };
 });
@@ -117,6 +119,12 @@ function createDetail(overrides: Partial<PromptAssetDetail> = {}): PromptAssetDe
 describe('PromptAssetDrawer', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        Object.defineProperty(window.navigator, 'clipboard', {
+            configurable: true,
+            value: {
+                writeText: mockClipboardWriteText,
+            },
+        });
         mockEditor.state.currentProject = {
             meta: {
                 id: 'project-1',
@@ -169,6 +177,91 @@ describe('PromptAssetDrawer', () => {
             versionLabel: 'v2',
         });
         expect(mockRouter.push).toHaveBeenCalledWith('/');
+    });
+
+    it('copies the prompt directly from the browse list', async () => {
+        const summary = createSummary();
+        const detail = createDetail();
+
+        clientMocks.listPromptAssets.mockResolvedValueOnce({
+            items: [summary],
+            pagination: { page: 1, pageSize: 50, total: 1 },
+        });
+        clientMocks.getPromptAssetDetail.mockResolvedValue(detail);
+
+        render(<PromptAssetDrawer />);
+
+        expect(await screen.findByText('代码评审提示词')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: '复制' }));
+
+        await waitFor(() => {
+            expect(clientMocks.getPromptAssetDetail).toHaveBeenCalledWith('asset-1');
+            expect(mockClipboardWriteText).toHaveBeenCalledWith('Review this patch.');
+        });
+        expect(await screen.findByText('已复制「代码评审提示词」提示词。')).toBeInTheDocument();
+    });
+
+    it('refreshes asset detail before copying when the list shows a newer version than the cached detail', async () => {
+        const staleSummary = createSummary({ currentVersionNumber: 2 });
+        const freshSummary = createSummary({ currentVersionNumber: 3, updatedAt: Date.now() });
+        const staleDetail = createDetail({
+            currentVersionNumber: 2,
+            currentVersion: {
+                id: 'version-2',
+                versionNumber: 2,
+                content: 'Review this patch.',
+                changeNote: '补充输出约束',
+                operationType: 'update',
+                sourceVersionId: 'version-1',
+                createdAt: staleSummary.updatedAt,
+            },
+        });
+        const freshDetail = createDetail({
+            currentVersionNumber: 3,
+            updatedAt: freshSummary.updatedAt,
+            currentVersion: {
+                id: 'version-3',
+                versionNumber: 3,
+                content: 'Review this patch with stricter checks.',
+                changeNote: '新增更严格检查',
+                operationType: 'update',
+                sourceVersionId: 'version-2',
+                createdAt: freshSummary.updatedAt,
+            },
+        });
+
+        clientMocks.listPromptAssets
+            .mockResolvedValueOnce({
+                items: [staleSummary],
+                pagination: { page: 1, pageSize: 50, total: 1 },
+            })
+            .mockResolvedValueOnce({
+                items: [freshSummary],
+                pagination: { page: 1, pageSize: 50, total: 1 },
+            });
+        clientMocks.getPromptAssetDetail.mockResolvedValueOnce(staleDetail).mockResolvedValueOnce(freshDetail);
+
+        render(<PromptAssetDrawer />);
+
+        expect(await screen.findByText('代码评审提示词')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: /代码评审提示词/i }));
+        expect(await screen.findByText('Prompt Preview')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: '返回列表' }));
+        expect(await screen.findByRole('button', { name: '全部' })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: '全部' }));
+        expect(await screen.findByText('v3')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: '复制' }));
+
+        await waitFor(() => {
+            expect(clientMocks.getPromptAssetDetail).toHaveBeenCalledTimes(2);
+            expect(clientMocks.getPromptAssetDetail).toHaveBeenLastCalledWith('asset-1');
+            expect(mockClipboardWriteText).toHaveBeenCalledWith('Review this patch with stricter checks.');
+        });
     });
 
     it('opens the save modal from entry=save and shows a mapped validation error message', async () => {
