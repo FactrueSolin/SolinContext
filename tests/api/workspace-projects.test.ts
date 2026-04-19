@@ -170,6 +170,7 @@ describe('Workspace Projects API', () => {
         expect(mockService.createProject).toHaveBeenCalledWith(mockPrincipal, {
             name: 'Customer Support Bot',
             systemPrompt: 'You are a helpful assistant.',
+            messages: [],
         });
     });
 

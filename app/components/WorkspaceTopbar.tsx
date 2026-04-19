@@ -71,7 +71,7 @@ export default function WorkspaceTopbar() {
     const pathname = usePathname();
     const router = useRouter();
     const searchParams = useSearchParams();
-    const workspaceSlug = typeof params.workspaceSlug === 'string' ? params.workspaceSlug : null;
+    const workspaceSlug = typeof params.workspaceSlug === 'string' ? params.workspaceSlug : undefined;
 
     const [session, setSession] = useState<SessionSummary | null>(null);
     const [workspaces, setWorkspaces] = useState<AccessibleWorkspace[]>([]);

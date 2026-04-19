@@ -45,14 +45,19 @@ interface WorkspaceProjectDetail {
     apiConfig: ApiConfig;
 }
 
-function extractApiData<T>(payload: ApiEnvelope<T> | T): T {
-    if (
-        payload &&
+function isApiEnvelope<T>(payload: unknown): payload is ApiEnvelope<T> {
+    return (
+        payload !== null &&
         typeof payload === 'object' &&
         'data' in payload &&
-        Object.keys(payload as Record<string, unknown>).length === 1
-    ) {
-        return (payload as ApiEnvelope<T>).data;
+        Object.keys(payload).length === 1
+    );
+}
+
+function extractApiData<T>(payload: ApiEnvelope<T> | T): T;
+function extractApiData<T>(payload: unknown): T {
+    if (isApiEnvelope<T>(payload)) {
+        return payload.data;
     }
 
     return payload as T;
@@ -688,7 +693,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
             const res = await fetch(getProjectCollectionEndpoint(workspaceSlug));
             if (!res.ok) throw new Error('Failed to load projects');
             const payload = await res.json() as ApiEnvelope<WorkspaceProjectListResponse> | ProjectMeta[];
-            const data = extractApiData(payload);
+            const data = extractApiData<WorkspaceProjectListResponse | ProjectMeta[]>(payload);
             const projects = Array.isArray(data) ? data : data.items;
             dispatch({ type: 'SET_PROJECTS', projects });
             dispatch({ type: 'SET_ERROR', error: null });
@@ -705,7 +710,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
             const res = await fetch(getProjectDetailEndpoint(id, workspaceSlug));
             if (!res.ok) throw new Error('Failed to load project');
             const payload = await res.json() as ApiEnvelope<WorkspaceProjectDetail> | ProjectData;
-            const data = extractApiData(payload);
+            const data = extractApiData<WorkspaceProjectDetail | ProjectData>(payload);
             dispatch({
                 type: 'SET_CURRENT_PROJECT',
                 project: workspaceSlug ? mapWorkspaceProjectDetail(data as WorkspaceProjectDetail) : (data as ProjectData),
@@ -783,13 +788,14 @@ export function EditorProvider({ children }: { children: ReactNode }) {
             });
             if (!res.ok) throw new Error('Failed to create project');
             const payload = await res.json() as ApiEnvelope<WorkspaceProjectDetail> | ProjectData;
-            const data = workspaceSlug
-                ? mapWorkspaceProjectDetail(extractApiData(payload as ApiEnvelope<WorkspaceProjectDetail>))
-                : (payload as ProjectData);
-            dispatch({ type: 'SET_CURRENT_PROJECT', project: data });
+            const responseData = extractApiData<WorkspaceProjectDetail | ProjectData>(payload);
+            const project = workspaceSlug
+                ? mapWorkspaceProjectDetail(responseData as WorkspaceProjectDetail)
+                : (responseData as ProjectData);
+            dispatch({ type: 'SET_CURRENT_PROJECT', project });
             dispatch({ type: 'SET_ERROR', error: null });
             await loadProjects();
-            return data;
+            return project;
         } catch (err) {
             dispatch({ type: 'SET_ERROR', error: err instanceof Error ? err.message : String(err) });
             throw err;

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { apiErrorResponse, parseJsonBody } from '../../../lib/api/http';
 import { resolvePrincipal, requirePermission } from '../../../lib/auth/principal';
 import { getProjectService } from '../../../lib/projects/service';
+import type { ProjectData } from '../../../types';
 
 const legacyApiConfigSchema = z.object({
     baseUrl: z.string(),
@@ -24,7 +25,7 @@ const legacyApiConfigSchema = z.object({
         .optional(),
 });
 
-const legacyProjectSchema = z.object({
+const legacyProjectSchema: z.ZodType<ProjectData> = z.object({
     meta: z.object({
         id: z.string().trim().min(1),
         name: z.string().trim().min(1).max(120),
@@ -32,7 +33,7 @@ const legacyProjectSchema = z.object({
         updatedAt: z.string(),
     }),
     systemPrompt: z.string(),
-    messages: z.array(z.unknown()),
+    messages: z.array(z.any()),
     apiConfig: legacyApiConfigSchema,
 });
 
