@@ -2,6 +2,7 @@ node_modules
 .next
 .git
 .docker-cache
+.env*
 *.md
 tests
 data

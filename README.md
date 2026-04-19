@@ -7,6 +7,15 @@ pnpm install
 pnpm dev
 ```
 
+本地开发如果需要覆盖根目录 `.env`，请新建 `.env.development.local`。
+Next.js 在 `pnpm dev` 下会优先读取 `.env.development.local` / `.env.local`，所以你可以把线上 `.env` 保留给 Docker，开发环境单独维护。
+
+可以直接从以下模板复制：
+
+```bash
+cp .env.development.local.example .env.development.local
+```
+
 默认会把应用数据写入 `./data`。项目与提示词资产都会存入同一个 SQLite 数据库 `app.db`。
 
 ## Docker Deployment
@@ -16,6 +25,9 @@ pnpm dev
 ```bash
 docker compose up -d --build
 ```
+
+`docker-compose.yml` 运行时固定读取仓库根目录 `.env` 作为正式部署配置。
+为了避免本地 `.env.local` / `.env.development.local` 污染生产镜像构建，Docker 构建上下文会忽略所有 `.env*` 文件。
 
 默认会使用 Docker/BuildKit 的常规构建缓存。
 
@@ -35,6 +47,7 @@ docker compose down
 docker build -t aicontext .
 docker run -d \
   --name aicontext \
+  --env-file .env \
   -p 3000:3000 \
   -v aicontext-data:/app/data \
   aicontext
