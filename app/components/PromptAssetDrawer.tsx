@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
     Archive,
     ArrowLeft,
@@ -165,20 +166,37 @@ function Modal({
         const previousOverflow = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
 
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                onClose();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+
         return () => {
             document.body.style.overflow = previousOverflow;
+            window.removeEventListener('keydown', handleKeyDown);
         };
-    }, []);
+    }, [onClose]);
 
-    return (
+    if (typeof document === 'undefined') {
+        return null;
+    }
+
+    return createPortal(
         <div
             className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/28 p-3 backdrop-blur-[2px] sm:p-6"
             role="dialog"
             aria-modal="true"
             aria-label={title}
+            onClick={onClose}
         >
             <div className="flex min-h-full items-end justify-center sm:items-center">
-                <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-[28px] border border-white/60 bg-[var(--card-bg)] shadow-2xl shadow-slate-900/20 sm:max-h-[calc(100dvh-3rem)]">
+                <div
+                    className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-[28px] border border-white/60 bg-[var(--card-bg)] shadow-2xl shadow-slate-900/20 sm:max-h-[calc(100dvh-3rem)]"
+                    onClick={(event) => event.stopPropagation()}
+                >
                     <div className="flex shrink-0 items-start justify-between border-b border-[var(--border)] px-5 py-4">
                         <div>
                             <h3 className="text-lg font-semibold text-[var(--foreground)]">{title}</h3>
@@ -197,7 +215,8 @@ function Modal({
                     <div className="overflow-y-auto">{children}</div>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 }
 
