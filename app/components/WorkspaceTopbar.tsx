@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { buildWorkspaceModulePath, getWorkspaceModuleFromPathname, type WorkspaceModule } from '../lib/workspace-routing';
 import { getCurrentSession, listWorkspaces, type AccessibleWorkspace, type SessionSummary } from '../lib/workspaces/client';
+import Header from './Header';
 
 const moduleMeta: Array<{
     id: WorkspaceModule;
@@ -318,6 +319,8 @@ export default function WorkspaceTopbar() {
                         );
                     })}
                 </nav>
+
+                {currentModule === 'projects' && <Header variant="embedded" />}
             </div>
         </div>
     );

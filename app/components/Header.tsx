@@ -7,7 +7,11 @@ import { FolderOpen, Save, Settings, Download, Upload, Code, FileJson, Sparkles 
 import { exportToXmlPrompt, exportToMessageJson } from '../lib/utils';
 import { buildWorkspaceModulePath, getWorkspaceSlugFromWindow } from '../lib/workspace-routing';
 
-function Header() {
+interface HeaderProps {
+    variant?: 'standalone' | 'embedded';
+}
+
+function Header({ variant = 'standalone' }: HeaderProps) {
     const { currentProject, isSaving, error, showProjectList } = useEditorState();
     const {
         toggleProjectList,
@@ -21,6 +25,12 @@ function Header() {
     const [editedName, setEditedName] = useState('');
     const [isCopied, setIsCopied] = useState(false);
     const [isJsonCopied, setIsJsonCopied] = useState(false);
+    const isEmbedded = variant === 'embedded';
+    const primaryModel = currentProject?.apiConfig.model.trim() || '未配置模型';
+    const compareModel = currentProject?.apiConfig.compareModel?.model.trim();
+    const settingsTitle = compareModel
+        ? `主模型：${primaryModel}\n对比模型：${compareModel}`
+        : `当前模型：${primaryModel}`;
 
     const handleEditName = () => {
         if (currentProject) {
@@ -104,7 +114,13 @@ function Header() {
     const tooltipBaseClass = "absolute -bottom-9 left-1/2 -translate-x-1/2 px-2.5 py-1 bg-[var(--tooltip-bg)] text-[var(--tooltip-text)] text-xs rounded-md whitespace-nowrap shadow-lg pointer-events-none";
 
     return (
-        <header className="relative z-30 flex h-14 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--header-bg)] px-3 backdrop-blur-sm sm:px-4">
+        <div
+            className={
+                isEmbedded
+                    ? 'relative z-10 flex min-h-14 flex-wrap items-center justify-between gap-3 rounded-[24px] border border-white/70 bg-white/72 px-3 py-2 shadow-sm backdrop-blur sm:px-4'
+                    : 'relative z-30 flex h-14 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--header-bg)] px-3 backdrop-blur-sm sm:px-4'
+            }
+        >
             {/* Left: Logo & Project List Toggle */}
             <div className="flex items-center gap-2 min-w-0">
                 <button
@@ -117,7 +133,7 @@ function Header() {
                     <FolderOpen size={20} className="text-[var(--muted-foreground)]" />
                 </button>
                 <h1 className="text-base font-semibold text-[var(--foreground)] hidden sm:block tracking-tight">
-                    AI Context Editor
+                    {isEmbedded ? '项目编辑器' : 'AI Context Editor'}
                 </h1>
             </div>
 
@@ -158,7 +174,7 @@ function Header() {
             </div>
 
             {/* Right: Actions */}
-            <div className="flex items-center gap-0.5 sm:gap-1">
+            <div className="flex flex-wrap items-center justify-end gap-0.5 sm:gap-1">
                 {error && (
                     <span className="text-[var(--destructive)] text-xs mr-2 max-w-[200px] truncate hidden sm:inline-block" title={error}>
                         {error}
@@ -170,6 +186,30 @@ function Header() {
                         保存中...
                     </span>
                 )}
+
+                <button
+                    onClick={toggleApiConfig}
+                    className={
+                        isEmbedded
+                            ? 'inline-flex max-w-[220px] items-center gap-2 rounded-full border border-white/80 bg-white/85 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors duration-[var(--transition-fast)] hover:bg-white'
+                            : 'p-2 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] active:scale-95'
+                    }
+                    title={settingsTitle}
+                >
+                    <Settings size={18} className="text-[var(--muted-foreground)]" />
+                    {isEmbedded && (
+                        <>
+                            <span className="hidden max-w-[120px] truncate md:inline">
+                                {primaryModel}
+                            </span>
+                            {compareModel && (
+                                <span className="hidden rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 xl:inline">
+                                    A/B
+                                </span>
+                            )}
+                        </>
+                    )}
+                </button>
 
                 <button
                     onClick={saveProject}
@@ -226,26 +266,20 @@ function Header() {
                     <input type="file" accept=".json" onChange={handleImport} className="hidden" />
                 </label>
 
-                <div className="w-px h-5 bg-[var(--border)] mx-1 hidden sm:block" />
+                {!isEmbedded && <div className="w-px h-5 bg-[var(--border)] mx-1 hidden sm:block" />}
 
-                <Link
-                    href={buildWorkspaceModulePath(workspaceSlug ?? '', 'prompt-assets')}
-                    className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-[var(--muted-foreground)] transition-colors duration-[var(--transition-fast)] hover:bg-[var(--muted)] active:scale-95"
-                    title="提示词资产库"
-                >
-                    <Sparkles size={16} />
-                    <span className="hidden md:inline">提示词资产库</span>
-                </Link>
-
-                <button
-                    onClick={toggleApiConfig}
-                    className="p-2 hover:bg-[var(--muted)] rounded-[var(--radius-sm)] transition-colors duration-[var(--transition-fast)] active:scale-95"
-                    title="API 设置"
-                >
-                    <Settings size={18} className="text-[var(--muted-foreground)]" />
-                </button>
+                {!isEmbedded && (
+                    <Link
+                        href={buildWorkspaceModulePath(workspaceSlug ?? '', 'prompt-assets')}
+                        className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-[var(--muted-foreground)] transition-colors duration-[var(--transition-fast)] hover:bg-[var(--muted)] active:scale-95"
+                        title="提示词资产库"
+                    >
+                        <Sparkles size={16} />
+                        <span className="hidden md:inline">提示词资产库</span>
+                    </Link>
+                )}
             </div>
-        </header>
+        </div>
     );
 }
 

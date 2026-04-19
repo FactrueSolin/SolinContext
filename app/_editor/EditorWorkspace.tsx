@@ -3,7 +3,6 @@
 import React, { useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { User, Bot } from 'lucide-react';
-import Header from '../components/Header';
 import ProjectListPanel from '../components/ProjectListPanel';
 import ApiConfigPanel from '../components/ApiConfigPanel';
 import SystemPromptEditor from '../components/SystemPromptEditor';
@@ -36,7 +35,6 @@ export default function EditorWorkspace() {
   return (
     <div className="flex min-h-screen flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
       <WorkspaceTopbar />
-      <Header />
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <ProjectListPanel />
