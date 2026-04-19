@@ -64,6 +64,7 @@ describe('PromptAssetRepository', () => {
                 name: 'First',
                 normalizedName: 'first',
                 description: 'First asset',
+                tags: ['基础'],
                 currentVersionNumber: 1,
                 status: 'active',
                 createdBy: USER_ID,
@@ -79,6 +80,7 @@ describe('PromptAssetRepository', () => {
                 versionNumber: 1,
                 nameSnapshot: 'First',
                 descriptionSnapshot: 'First asset',
+                tagsSnapshot: ['基础'],
                 content: 'First content',
                 changeNote: null,
                 contentHash: 'hash-1',
@@ -96,6 +98,7 @@ describe('PromptAssetRepository', () => {
                 name: 'Second',
                 normalizedName: 'second',
                 description: 'Second asset',
+                tags: ['测试'],
                 currentVersionNumber: 1,
                 status: 'active',
                 createdBy: USER_ID,
@@ -111,6 +114,7 @@ describe('PromptAssetRepository', () => {
                 versionNumber: 1,
                 nameSnapshot: 'Second',
                 descriptionSnapshot: 'Second asset',
+                tagsSnapshot: ['测试'],
                 content: 'Second content',
                 changeNote: null,
                 contentHash: 'hash-2',
@@ -131,6 +135,7 @@ describe('PromptAssetRepository', () => {
         expect(pageOne.total).toBe(2);
         expect(pageOne.items).toHaveLength(1);
         expect(pageOne.items[0].id).toBe('asset-2');
+        expect(pageOne.items[0].tags).toEqual(['测试']);
 
         const pageTwo = repository.list({
             workspaceId: WORKSPACE_ID,
@@ -150,6 +155,7 @@ describe('PromptAssetRepository', () => {
                 name: 'Prompt',
                 normalizedName: 'prompt',
                 description: '',
+                tags: ['模板'],
                 currentVersionNumber: 3,
                 status: 'active',
                 createdBy: USER_ID,
@@ -165,6 +171,7 @@ describe('PromptAssetRepository', () => {
                 versionNumber: 1,
                 nameSnapshot: 'Prompt',
                 descriptionSnapshot: '',
+                tagsSnapshot: ['模板'],
                 content: 'v1',
                 changeNote: null,
                 contentHash: 'hash-1',
@@ -181,6 +188,7 @@ describe('PromptAssetRepository', () => {
             name: 'Prompt',
             normalizedName: 'prompt',
             description: '',
+            tags: ['模板', 'v2'],
             currentVersionNumber: 2,
             updatedBy: USER_ID,
             updatedAt: 200,
@@ -191,6 +199,7 @@ describe('PromptAssetRepository', () => {
                 versionNumber: 2,
                 nameSnapshot: 'Prompt',
                 descriptionSnapshot: '',
+                tagsSnapshot: ['模板', 'v2'],
                 content: 'v2',
                 changeNote: null,
                 contentHash: 'hash-2',
@@ -207,6 +216,7 @@ describe('PromptAssetRepository', () => {
             name: 'Prompt',
             normalizedName: 'prompt',
             description: '',
+            tags: ['模板', 'v3'],
             currentVersionNumber: 3,
             updatedBy: USER_ID,
             updatedAt: 300,
@@ -217,6 +227,7 @@ describe('PromptAssetRepository', () => {
                 versionNumber: 3,
                 nameSnapshot: 'Prompt',
                 descriptionSnapshot: '',
+                tagsSnapshot: ['模板', 'v3'],
                 content: 'v3',
                 changeNote: null,
                 contentHash: 'hash-3',
@@ -229,6 +240,7 @@ describe('PromptAssetRepository', () => {
 
         const result = repository.listVersions(WORKSPACE_ID, 'asset-1', { page: 1, pageSize: 10 });
         expect(result.items.map((item) => item.versionNumber)).toEqual([3, 2, 1]);
+        expect(result.items[0].tagsSnapshot).toEqual(['模板', 'v3']);
     });
 
     it('does not return a version that belongs to another asset', () => {
@@ -239,6 +251,7 @@ describe('PromptAssetRepository', () => {
                 name: 'First',
                 normalizedName: 'first',
                 description: '',
+                tags: [],
                 currentVersionNumber: 1,
                 status: 'active',
                 createdBy: USER_ID,
@@ -254,6 +267,7 @@ describe('PromptAssetRepository', () => {
                 versionNumber: 1,
                 nameSnapshot: 'First',
                 descriptionSnapshot: '',
+                tagsSnapshot: [],
                 content: 'v1',
                 changeNote: null,
                 contentHash: 'hash-1',
@@ -271,6 +285,7 @@ describe('PromptAssetRepository', () => {
                 name: 'Second',
                 normalizedName: 'second',
                 description: '',
+                tags: [],
                 currentVersionNumber: 1,
                 status: 'active',
                 createdBy: USER_ID,
@@ -286,6 +301,7 @@ describe('PromptAssetRepository', () => {
                 versionNumber: 1,
                 nameSnapshot: 'Second',
                 descriptionSnapshot: '',
+                tagsSnapshot: [],
                 content: 'v1',
                 changeNote: null,
                 contentHash: 'hash-2',

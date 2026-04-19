@@ -18,6 +18,7 @@ export type PromptAssetApiErrorCode =
 
 export interface ListPromptAssetsParams {
     query?: string;
+    tag?: string;
     status?: PromptAssetStatus | 'all';
     page?: number;
     pageSize?: number;
@@ -31,6 +32,7 @@ export interface ListPromptAssetVersionsParams {
 export interface CreatePromptAssetPayload {
     name: string;
     description?: string;
+    tags?: string[];
     content: string;
     changeNote?: string;
 }
@@ -140,6 +142,7 @@ export function listPromptAssets(
     return request<PaginatedData<PromptAssetSummary>>(
         `${getPromptAssetBasePath(workspaceSlug)}${buildSearch({
             query: params.query,
+            tag: params.tag,
             status: params.status,
             page: params.page,
             pageSize: params.pageSize,

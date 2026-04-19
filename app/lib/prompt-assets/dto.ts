@@ -5,6 +5,7 @@ export interface PromptAssetSummary {
     id: string;
     name: string;
     description: string;
+    tags: string[];
     status: PromptAssetStatus;
     currentVersionNumber: number;
     createdAt: number;
@@ -32,6 +33,7 @@ export interface PromptAssetVersionItem {
     versionNumber: number;
     nameSnapshot: string;
     descriptionSnapshot: string;
+    tagsSnapshot: string[];
     content: string;
     changeNote: string | null;
     operationType: PromptAssetOperationType;

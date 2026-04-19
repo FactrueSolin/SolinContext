@@ -23,6 +23,8 @@ export const promptAssets = sqliteTable(
         name: text('name').notNull(),
         normalizedName: text('normalized_name').notNull(),
         description: text('description').notNull().default(''),
+        tags: text('tags').notNull().default('[]'),
+        normalizedTags: text('normalized_tags').notNull().default(''),
         currentVersionNumber: integer('current_version_number').notNull().default(1),
         status: text('status', { enum: promptAssetStatuses }).notNull().default('active'),
         createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
@@ -48,6 +50,7 @@ export const promptAssets = sqliteTable(
             'ck_prompt_assets_normalized_name_length',
             sql`length(trim(${table.normalizedName})) between 1 and 120`
         ),
+        check('ck_prompt_assets_tags_json', sql`json_valid(${table.tags})`),
         check('ck_prompt_assets_current_version', sql`${table.currentVersionNumber} >= 1`),
         check('ck_prompt_assets_status', sql`${table.status} in ('active', 'archived')`),
         check(
@@ -74,6 +77,7 @@ export const promptAssetVersions = sqliteTable(
         versionNumber: integer('version_number').notNull(),
         nameSnapshot: text('name_snapshot').notNull(),
         descriptionSnapshot: text('description_snapshot').notNull().default(''),
+        tagsSnapshot: text('tags_snapshot').notNull().default('[]'),
         content: text('content').notNull(),
         changeNote: text('change_note'),
         contentHash: text('content_hash').notNull(),
@@ -99,6 +103,7 @@ export const promptAssetVersions = sqliteTable(
             'ck_prompt_asset_versions_name_length',
             sql`length(trim(${table.nameSnapshot})) between 1 and 120`
         ),
+        check('ck_prompt_asset_versions_tags_snapshot_json', sql`json_valid(${table.tagsSnapshot})`),
         check('ck_prompt_asset_versions_content', sql`length(${table.content}) > 0`),
         check(
             'ck_prompt_asset_versions_operation_type',

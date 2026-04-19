@@ -89,6 +89,7 @@ function createSummary(overrides: Partial<PromptAssetSummary> = {}): PromptAsset
         id: 'asset-1',
         name: '代码评审提示词',
         description: '用于代码审查',
+        tags: ['代码评审'],
         status: 'active',
         currentVersionNumber: 2,
         createdAt: now - 10_000,
@@ -283,6 +284,7 @@ describe('PromptAssetDrawer', () => {
         expect(clientMocks.createPromptAsset).toHaveBeenCalledWith({
             name: '新资产',
             description: '',
+            tags: [],
             content: 'Current system prompt',
             changeNote: undefined,
         });

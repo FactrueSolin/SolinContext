@@ -2,6 +2,12 @@ import { and, desc, eq, like, sql } from 'drizzle-orm';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { promptAssets, promptAssetVersions } from '../db/schema';
 import type { PromptAssetOperationType, PromptAssetStatus } from './dto';
+import {
+    buildPromptAssetNormalizedTagToken,
+    buildPromptAssetNormalizedTags,
+    parsePromptAssetTags,
+    serializePromptAssetTags,
+} from './tags';
 
 type PromptAssetDatabase = BetterSQLite3Database<{
     promptAssets: typeof promptAssets;
@@ -14,6 +20,7 @@ export interface PromptAssetRow {
     name: string;
     normalizedName: string;
     description: string;
+    tags: string[];
     currentVersionNumber: number;
     status: PromptAssetStatus;
     createdBy: string | null;
@@ -30,6 +37,7 @@ export interface PromptAssetVersionRow {
     versionNumber: number;
     nameSnapshot: string;
     descriptionSnapshot: string;
+    tagsSnapshot: string[];
     content: string;
     changeNote: string | null;
     contentHash: string;
@@ -49,6 +57,7 @@ export interface PaginatedResult<T> {
 export interface ListPromptAssetsParams {
     workspaceId: string;
     query?: string;
+    tag?: string;
     status: PromptAssetStatus | 'all';
     page: number;
     pageSize: number;
@@ -70,6 +79,7 @@ export interface AppendVersionTxInput {
     name: string;
     normalizedName: string;
     description: string;
+    tags: string[];
     currentVersionNumber: number;
     updatedBy: string;
     updatedAt: number;
@@ -83,6 +93,50 @@ export interface UpdateArchiveStatusTxInput {
     archivedAt: number | null;
     updatedBy: string;
     updatedAt: number;
+}
+
+function mapAssetRow(row: {
+    id: string;
+    workspaceId: string;
+    name: string;
+    normalizedName: string;
+    description: string;
+    tags: string;
+    currentVersionNumber: number;
+    status: PromptAssetStatus;
+    createdBy: string | null;
+    updatedBy: string | null;
+    createdAt: number;
+    updatedAt: number;
+    archivedAt: number | null;
+}): PromptAssetRow {
+    return {
+        ...row,
+        tags: parsePromptAssetTags(row.tags),
+        archivedAt: row.archivedAt ?? null,
+    };
+}
+
+function mapVersionRow(row: {
+    id: string;
+    assetId: string;
+    workspaceId: string;
+    versionNumber: number;
+    nameSnapshot: string;
+    descriptionSnapshot: string;
+    tagsSnapshot: string;
+    content: string;
+    changeNote: string | null;
+    contentHash: string;
+    operationType: PromptAssetOperationType;
+    sourceVersionId: string | null;
+    createdBy: string | null;
+    createdAt: number;
+}): PromptAssetVersionRow {
+    return {
+        ...row,
+        tagsSnapshot: parsePromptAssetTags(row.tagsSnapshot),
+    };
 }
 
 export class PromptAssetRepository {
@@ -100,6 +154,12 @@ export class PromptAssetRepository {
             conditions.push(like(promptAssets.name, `%${params.query}%`));
         }
 
+        if (params.tag) {
+            conditions.push(
+                sql<boolean>`instr(${promptAssets.normalizedTags}, ${buildPromptAssetNormalizedTagToken(params.tag)}) > 0`
+            );
+        }
+
         const whereClause = and(...conditions);
 
         const items = this.db
@@ -109,6 +169,7 @@ export class PromptAssetRepository {
                 name: promptAssets.name,
                 normalizedName: promptAssets.normalizedName,
                 description: promptAssets.description,
+                tags: promptAssets.tags,
                 currentVersionNumber: promptAssets.currentVersionNumber,
                 status: promptAssets.status,
                 createdBy: promptAssets.createdBy,
@@ -123,7 +184,7 @@ export class PromptAssetRepository {
             .limit(params.pageSize)
             .offset(offset)
             .all()
-            .map((item) => ({ ...item, archivedAt: item.archivedAt ?? null }));
+            .map((item) => mapAssetRow(item));
 
         const totalRow = this.db
             .select({
@@ -150,6 +211,7 @@ export class PromptAssetRepository {
                     name: promptAssets.name,
                     normalizedName: promptAssets.normalizedName,
                     description: promptAssets.description,
+                    tags: promptAssets.tags,
                     currentVersionNumber: promptAssets.currentVersionNumber,
                     status: promptAssets.status,
                     createdBy: promptAssets.createdBy,
@@ -162,11 +224,11 @@ export class PromptAssetRepository {
                 .where(and(eq(promptAssets.workspaceId, workspaceId), eq(promptAssets.id, id)))
                 .get() ?? null;
 
-        return row ? { ...row, archivedAt: row.archivedAt ?? null } : null;
+        return row ? mapAssetRow(row) : null;
     }
 
     findCurrentVersionByAssetId(workspaceId: string, assetId: string): PromptAssetVersionRow | null {
-        return (
+        const row =
             this.db
                 .select({
                     id: promptAssetVersions.id,
@@ -175,6 +237,7 @@ export class PromptAssetRepository {
                     versionNumber: promptAssetVersions.versionNumber,
                     nameSnapshot: promptAssetVersions.nameSnapshot,
                     descriptionSnapshot: promptAssetVersions.descriptionSnapshot,
+                    tagsSnapshot: promptAssetVersions.tagsSnapshot,
                     content: promptAssetVersions.content,
                     changeNote: promptAssetVersions.changeNote,
                     contentHash: promptAssetVersions.contentHash,
@@ -197,8 +260,9 @@ export class PromptAssetRepository {
                         eq(promptAssetVersions.assetId, assetId)
                     )
                 )
-                .get() ?? null
-        );
+                .get() ?? null;
+
+        return row ? mapVersionRow(row) : null;
     }
 
     findVersionById(
@@ -206,7 +270,7 @@ export class PromptAssetRepository {
         assetId: string,
         versionId: string
     ): PromptAssetVersionRow | null {
-        return (
+        const row =
             this.db
                 .select({
                     id: promptAssetVersions.id,
@@ -215,6 +279,7 @@ export class PromptAssetRepository {
                     versionNumber: promptAssetVersions.versionNumber,
                     nameSnapshot: promptAssetVersions.nameSnapshot,
                     descriptionSnapshot: promptAssetVersions.descriptionSnapshot,
+                    tagsSnapshot: promptAssetVersions.tagsSnapshot,
                     content: promptAssetVersions.content,
                     changeNote: promptAssetVersions.changeNote,
                     contentHash: promptAssetVersions.contentHash,
@@ -231,8 +296,9 @@ export class PromptAssetRepository {
                         eq(promptAssetVersions.id, versionId)
                     )
                 )
-                .get() ?? null
-        );
+                .get() ?? null;
+
+        return row ? mapVersionRow(row) : null;
     }
 
     listVersions(
@@ -250,6 +316,7 @@ export class PromptAssetRepository {
                 versionNumber: promptAssetVersions.versionNumber,
                 nameSnapshot: promptAssetVersions.nameSnapshot,
                 descriptionSnapshot: promptAssetVersions.descriptionSnapshot,
+                tagsSnapshot: promptAssetVersions.tagsSnapshot,
                 content: promptAssetVersions.content,
                 changeNote: promptAssetVersions.changeNote,
                 contentHash: promptAssetVersions.contentHash,
@@ -265,7 +332,8 @@ export class PromptAssetRepository {
             .orderBy(desc(promptAssetVersions.versionNumber))
             .limit(params.pageSize)
             .offset(offset)
-            .all();
+            .all()
+            .map((item) => mapVersionRow(item));
 
         const totalRow = this.db
             .select({
@@ -294,6 +362,8 @@ export class PromptAssetRepository {
                 name: input.asset.name,
                 normalizedName: input.asset.normalizedName,
                 description: input.asset.description,
+                tags: serializePromptAssetTags(input.asset.tags),
+                normalizedTags: buildPromptAssetNormalizedTags(input.asset.tags),
                 currentVersionNumber: input.asset.currentVersionNumber,
                 status: input.asset.status,
                 createdBy: input.asset.createdBy,
@@ -313,6 +383,7 @@ export class PromptAssetRepository {
                 versionNumber: input.version.versionNumber,
                 nameSnapshot: input.version.nameSnapshot,
                 descriptionSnapshot: input.version.descriptionSnapshot,
+                tagsSnapshot: serializePromptAssetTags(input.version.tagsSnapshot),
                 content: input.version.content,
                 changeNote: input.version.changeNote,
                 contentHash: input.version.contentHash,
@@ -334,6 +405,7 @@ export class PromptAssetRepository {
                 versionNumber: input.version.versionNumber,
                 nameSnapshot: input.version.nameSnapshot,
                 descriptionSnapshot: input.version.descriptionSnapshot,
+                tagsSnapshot: serializePromptAssetTags(input.version.tagsSnapshot),
                 content: input.version.content,
                 changeNote: input.version.changeNote,
                 contentHash: input.version.contentHash,
@@ -350,6 +422,8 @@ export class PromptAssetRepository {
                 name: input.name,
                 normalizedName: input.normalizedName,
                 description: input.description,
+                tags: serializePromptAssetTags(input.tags),
+                normalizedTags: buildPromptAssetNormalizedTags(input.tags),
                 currentVersionNumber: input.currentVersionNumber,
                 updatedBy: input.updatedBy,
                 updatedAt: input.updatedAt,

@@ -86,11 +86,13 @@ describe('PromptAssetService', () => {
         const asset = await service.createPromptAsset(principal, {
             name: 'Code Review',
             description: 'Review prompt',
+            tags: [],
             content: 'You are a rigorous reviewer',
             changeNote: 'Initial version',
         });
 
         expect(asset.name).toBe('Code Review');
+        expect(asset.tags).toEqual([]);
         expect(asset.currentVersionNumber).toBe(1);
         expect(asset.status).toBe('active');
         expect(asset.currentVersion.versionNumber).toBe(1);
@@ -102,19 +104,24 @@ describe('PromptAssetService', () => {
         const asset = await service.createPromptAsset(principal, {
             name: 'Code Review',
             description: 'Review prompt',
+            tags: ['代码评审', '后端'],
             content: 'You are a rigorous reviewer',
             changeNote: 'Initial version',
         });
 
+        expect(asset.tags).toEqual(['代码评审', '后端']);
+
         const updated = await service.createPromptAssetVersion(principal, asset.id, {
             name: 'Code Review',
             description: 'Review prompt',
+            tags: ['代码评审', '后端', '高优先级'],
             content: 'You are a strict and pragmatic reviewer',
             changeNote: 'Refined instructions',
             expectedVersionNumber: 1,
         });
 
         expect(updated.currentVersionNumber).toBe(2);
+        expect(updated.tags).toEqual(['代码评审', '后端', '高优先级']);
         expect(updated.currentVersion.versionNumber).toBe(2);
         expect(updated.currentVersion.operationType).toBe('update');
 
@@ -122,6 +129,7 @@ describe('PromptAssetService', () => {
             service.createPromptAssetVersion(principal, asset.id, {
                 name: 'Code Review',
                 description: 'Review prompt',
+                tags: ['代码评审', '后端', '高优先级'],
                 content: 'You are a strict and pragmatic reviewer',
                 changeNote: 'Duplicate content',
                 expectedVersionNumber: 2,
@@ -136,12 +144,14 @@ describe('PromptAssetService', () => {
         const asset = await service.createPromptAsset(principal, {
             name: 'Reviewer',
             description: 'v1',
+            tags: [],
             content: 'Version 1',
         });
 
         const updated = await service.createPromptAssetVersion(principal, asset.id, {
             name: 'Reviewer',
             description: 'v2',
+            tags: [],
             content: 'Version 2',
             expectedVersionNumber: 1,
         });
@@ -163,6 +173,7 @@ describe('PromptAssetService', () => {
         const asset = await service.createPromptAsset(principal, {
             name: 'Ops Prompt',
             description: 'Ops',
+            tags: [],
             content: 'Initial',
         });
 
@@ -174,6 +185,7 @@ describe('PromptAssetService', () => {
             service.createPromptAssetVersion(principal, asset.id, {
                 name: 'Ops Prompt',
                 description: 'Ops',
+                tags: [],
                 content: 'Changed',
                 expectedVersionNumber: 1,
             })
@@ -191,6 +203,7 @@ describe('PromptAssetService', () => {
         const asset = await service.createPromptAsset(principal, {
             name: 'Conflict Prompt',
             description: 'Conflict',
+            tags: [],
             content: 'Initial',
         });
 
@@ -198,6 +211,7 @@ describe('PromptAssetService', () => {
             service.createPromptAssetVersion(principal, asset.id, {
                 name: 'Conflict Prompt',
                 description: 'Conflict',
+                tags: [],
                 content: 'Changed',
                 expectedVersionNumber: 9,
             })

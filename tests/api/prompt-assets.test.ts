@@ -58,6 +58,7 @@ function buildSummary(overrides: Partial<Record<string, unknown>> = {}) {
         id: 'asset-1',
         name: 'Code Review Prompt',
         description: 'Review prompt',
+        tags: ['review'],
         status: 'active',
         currentVersionNumber: 2,
         createdAt: 100,
@@ -90,6 +91,7 @@ function buildVersion(overrides: Partial<Record<string, unknown>> = {}) {
         versionNumber: 1,
         nameSnapshot: 'Code Review Prompt',
         descriptionSnapshot: 'Review prompt',
+        tagsSnapshot: ['review'],
         content: 'You are a reviewer',
         changeNote: 'Initial version',
         operationType: 'create',
@@ -124,6 +126,7 @@ describe('Prompt Assets API', () => {
         });
         expect(mockService.listPromptAssets).toHaveBeenCalledWith(mockPrincipal, {
             query: 'code',
+            tag: undefined,
             status: 'all',
             page: 2,
             pageSize: 10,
@@ -157,6 +160,7 @@ describe('Prompt Assets API', () => {
         expect(mockService.createPromptAsset).toHaveBeenCalledWith(mockPrincipal, {
             name: 'Code Review Prompt',
             description: '',
+            tags: [],
             content: 'You are a rigorous reviewer',
             changeNote: 'Initial version',
         });
@@ -221,6 +225,7 @@ describe('Prompt Assets API', () => {
         expect(mockService.createPromptAssetVersion).toHaveBeenCalledWith(mockPrincipal, 'asset-1', {
             name: 'Updated Prompt',
             description: 'Review prompt',
+            tags: [],
             content: 'Updated content',
             changeNote: 'Tighten rules',
             expectedVersionNumber: 2,

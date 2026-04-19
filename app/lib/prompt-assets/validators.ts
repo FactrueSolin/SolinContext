@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import {
+    MAX_PROMPT_ASSET_TAG_LENGTH,
+    MAX_PROMPT_ASSET_TAGS,
+    sanitizePromptAssetTags,
+} from './tags';
 
 const MAX_NAME_LENGTH = 120;
 const MAX_DESCRIPTION_LENGTH = 500;
@@ -7,6 +12,11 @@ const MAX_CHANGE_NOTE_LENGTH = 200;
 const MAX_QUERY_LENGTH = 50;
 const DEFAULT_PAGE = 1;
 const DEFAULT_PAGE_SIZE = 20;
+
+const promptAssetTagsSchema = z
+    .array(z.string().trim().min(1).max(MAX_PROMPT_ASSET_TAG_LENGTH))
+    .max(MAX_PROMPT_ASSET_TAGS)
+    .transform((tags) => sanitizePromptAssetTags(tags));
 
 function optionalTrimmedString(maxLength: number) {
     return z
@@ -44,6 +54,7 @@ const contentSchema = z
 
 export const listPromptAssetsQuerySchema = z.object({
     query: optionalTrimmedString(MAX_QUERY_LENGTH),
+    tag: optionalTrimmedString(MAX_PROMPT_ASSET_TAG_LENGTH),
     status: z.enum(['active', 'archived', 'all']).default('active'),
     page: defaultedPaginationField(DEFAULT_PAGE, Number.MAX_SAFE_INTEGER),
     pageSize: defaultedPaginationField(DEFAULT_PAGE_SIZE, 50),
@@ -57,6 +68,7 @@ export const promptAssetVersionsQuerySchema = z.object({
 export const createPromptAssetSchema = z.object({
     name: z.string().trim().min(1).max(MAX_NAME_LENGTH),
     description: z.string().max(MAX_DESCRIPTION_LENGTH).optional().default(''),
+    tags: promptAssetTagsSchema.optional().default([]),
     content: contentSchema,
     changeNote: z.string().trim().max(MAX_CHANGE_NOTE_LENGTH).optional(),
 });
@@ -64,6 +76,7 @@ export const createPromptAssetSchema = z.object({
 export const createPromptAssetVersionSchema = z.object({
     name: z.string().trim().min(1).max(MAX_NAME_LENGTH),
     description: z.string().max(MAX_DESCRIPTION_LENGTH).optional().default(''),
+    tags: promptAssetTagsSchema.optional().default([]),
     content: contentSchema,
     changeNote: z.string().trim().max(MAX_CHANGE_NOTE_LENGTH).optional(),
     expectedVersionNumber: z.coerce.number().int().min(1),

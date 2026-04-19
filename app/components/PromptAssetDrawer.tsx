@@ -36,6 +36,7 @@ import type {
     PromptAssetSummary,
     PromptAssetVersionItem,
 } from '../lib/prompt-assets/dto';
+import { arePromptAssetTagSetsEqual, sanitizePromptAssetTags } from '../lib/prompt-assets/tags';
 import { buildWorkspaceModulePath, getWorkspaceSlugFromWindow } from '../lib/workspace-routing';
 
 type DrawerView = 'list' | 'detail' | 'edit' | 'history';
@@ -57,6 +58,7 @@ interface ToastState {
 interface AssetDraft {
     name: string;
     description: string;
+    tagsInput: string;
     content: string;
     changeNote: string;
 }
@@ -67,6 +69,38 @@ interface CopyPromptButtonProps {
     isCopied: boolean;
     compact?: boolean;
     className?: string;
+}
+
+function parseTagInput(value: string): string[] {
+    return sanitizePromptAssetTags(
+        value
+            .split(/[,\n，、]/)
+            .map((item) => item.trim())
+            .filter((item) => item.length > 0)
+    );
+}
+
+function formatTagInput(tags: string[]): string {
+    return tags.join(', ');
+}
+
+function TagList({ tags }: { tags: string[] }) {
+    if (tags.length === 0) {
+        return null;
+    }
+
+    return (
+        <div className="mt-3 flex flex-wrap gap-2">
+            {tags.map((tag) => (
+                <span
+                    key={tag}
+                    className="rounded-full bg-[var(--asset-primary-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--asset-primary)]"
+                >
+                    #{tag}
+                </span>
+            ))}
+        </div>
+    );
 }
 
 function formatRelativeTime(value: number) {
@@ -89,6 +123,7 @@ function toSummary(detail: PromptAssetDetail): PromptAssetSummary {
         id: detail.id,
         name: detail.name,
         description: detail.description,
+        tags: detail.tags,
         status: detail.status,
         currentVersionNumber: detail.currentVersionNumber,
         createdAt: detail.createdAt,
@@ -105,6 +140,7 @@ function makeBlankDraft(content = ''): AssetDraft {
     return {
         name: '',
         description: '',
+        tagsInput: '',
         content,
         changeNote: '',
     };
@@ -114,6 +150,7 @@ function makeEditDraft(detail: PromptAssetDetail): AssetDraft {
     return {
         name: detail.name,
         description: detail.description,
+        tagsInput: formatTagInput(detail.tags),
         content: detail.currentVersion.content,
         changeNote: '',
     };
@@ -282,6 +319,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
     const [historyError, setHistoryError] = useState<string | null>(null);
     const [filter, setFilter] = useState<AssetFilter>('active');
     const [query, setQuery] = useState('');
+    const [selectedTag, setSelectedTag] = useState<string | null>(null);
     const [saveDraft, setSaveDraft] = useState<AssetDraft>(makeBlankDraft());
     const [editDraft, setEditDraft] = useState<AssetDraft>(makeBlankDraft());
     const [showSaveModal, setShowSaveModal] = useState(false);
@@ -302,6 +340,13 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
     const selectedHistoryVersion = useMemo(
         () => versions.find((version) => version.id === historyVersionId) ?? null,
         [historyVersionId, versions]
+    );
+    const availableTags = useMemo(
+        () =>
+            Array.from(new Set(assets.flatMap((asset) => asset.tags))).sort((left, right) =>
+                left.localeCompare(right, 'zh-CN')
+            ),
+        [assets]
     );
 
     useEffect(() => {
@@ -359,12 +404,14 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
             const data = workspaceSlug
                 ? await listPromptAssets(workspaceSlug, {
                       query: query.trim() || undefined,
+                      tag: selectedTag ?? undefined,
                       status: filter,
                       page: 1,
                       pageSize: 50,
                   })
                 : await listPromptAssets({
                       query: query.trim() || undefined,
+                      tag: selectedTag ?? undefined,
                       status: filter,
                       page: 1,
                       pageSize: 50,
@@ -386,7 +433,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                 setIsLoadingList(false);
             }
         }
-    }, [filter, query, workspaceSlug]);
+    }, [filter, query, selectedTag, workspaceSlug]);
 
     const loadAssetDetail = useCallback(async (assetId: string) => {
         const requestId = ++detailRequestIdRef.current;
@@ -515,6 +562,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
             const payload = {
                 name: saveDraft.name.trim(),
                 description: saveDraft.description,
+                tags: parseTagInput(saveDraft.tagsInput),
                 content: saveDraft.content,
                 changeNote: saveDraft.changeNote.trim() || undefined,
             };
@@ -553,6 +601,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
         const hasChanges =
             editDraft.name.trim() !== selectedAssetDetail.name ||
             editDraft.description !== selectedAssetDetail.description ||
+            !arePromptAssetTagSetsEqual(parseTagInput(editDraft.tagsInput), selectedAssetDetail.tags) ||
             editDraft.content !== selectedAssetDetail.currentVersion.content;
 
         if (!hasChanges || !editDraft.name.trim() || !editDraft.content.trim()) {
@@ -565,6 +614,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
             const payload = {
                 name: editDraft.name.trim(),
                 description: editDraft.description,
+                tags: parseTagInput(editDraft.tagsInput),
                 content: editDraft.content,
                 changeNote: editDraft.changeNote.trim() || undefined,
                 expectedVersionNumber: selectedAssetDetail.currentVersionNumber,
@@ -810,7 +860,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
         }
 
         if (assets.length === 0) {
-            const isSearchState = Boolean(query.trim()) || filter !== 'active';
+            const isSearchState = Boolean(query.trim()) || filter !== 'active' || Boolean(selectedTag);
 
             return (
                 <div className="rounded-[28px] border border-dashed border-[var(--border)] bg-white/70 px-6 py-12 text-center shadow-sm dark:bg-slate-900/40">
@@ -862,6 +912,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                                     <p className="mt-2 line-clamp-2 text-[13px] leading-5 text-[var(--muted-foreground)]">
                                         {asset.description || '未填写描述'}
                                     </p>
+                                    <TagList tags={asset.tags} />
                                 </div>
                                 <div className="shrink-0 rounded-full bg-[var(--asset-primary-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--asset-primary)]">
                                     v{asset.currentVersionNumber}
@@ -951,6 +1002,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                             <p className="mt-2 max-w-xl text-sm leading-6 text-[var(--muted-foreground)]">
                                 {selectedAssetDetail.description || '未填写描述'}
                             </p>
+                            <TagList tags={selectedAssetDetail.tags} />
                         </div>
                         <div className="flex items-center gap-2 rounded-full bg-white/75 px-3 py-1.5 text-xs text-[var(--muted-foreground)] shadow-sm dark:bg-slate-900/40">
                             <Clock3 size={13} />
@@ -1051,6 +1103,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
         const hasChanges =
             editDraft.name.trim() !== selectedAssetDetail.name ||
             editDraft.description !== selectedAssetDetail.description ||
+            !arePromptAssetTagSetsEqual(parseTagInput(editDraft.tagsInput), selectedAssetDetail.tags) ||
             editDraft.content !== selectedAssetDetail.currentVersion.content;
 
         return (
@@ -1091,6 +1144,18 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                                 }
                                 className="min-h-[88px] w-full rounded-2xl border border-[var(--border)] bg-white/90 px-4 py-3 text-sm leading-6 text-[var(--foreground)] shadow-sm dark:bg-slate-900/60"
                                 placeholder="说明它适合什么场景、为什么值得复用。"
+                            />
+                        </label>
+                        <label className="block">
+                            <span className="mb-2 block text-sm font-medium text-[var(--foreground)]">标签</span>
+                            <input
+                                type="text"
+                                value={editDraft.tagsInput}
+                                onChange={(event) =>
+                                    setEditDraft((current) => ({ ...current, tagsInput: event.target.value }))
+                                }
+                                className="w-full rounded-2xl border border-[var(--border)] bg-white/90 px-4 py-3 text-sm text-[var(--foreground)] shadow-sm dark:bg-slate-900/60"
+                                placeholder="例如：代码评审, 后端, 标准模板"
                             />
                         </label>
                         <label className="block">
@@ -1272,6 +1337,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                                             <p className="mt-3 text-sm leading-6 text-[var(--muted-foreground)]">
                                                 {selectedHistoryVersion.descriptionSnapshot || '未填写描述'}
                                             </p>
+                                            <TagList tags={selectedHistoryVersion.tagsSnapshot} />
                                         </div>
                                         <div className="rounded-[22px] border border-white/60 bg-white/80 p-4 shadow-sm dark:bg-slate-900/30">
                                             <div className="flex flex-col gap-3 border-b border-white/60 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -1417,6 +1483,21 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                                             {item.label}
                                         </button>
                                     ))}
+                                    {availableTags.map((tag) => (
+                                        <button
+                                            key={tag}
+                                            onClick={() =>
+                                                setSelectedTag((current) => (current === tag ? null : tag))
+                                            }
+                                            className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
+                                                selectedTag === tag
+                                                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                                                    : 'border border-white/70 bg-white/70 text-[var(--muted-foreground)] hover:text-[var(--foreground)] dark:bg-slate-900/45'
+                                            }`}
+                                        >
+                                            #{tag}
+                                        </button>
+                                    ))}
                                     <button
                                         onClick={() => {
                                             setSaveDraft(makeBlankDraft(currentProject?.systemPrompt ?? ''));
@@ -1475,6 +1556,18 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                                     }
                                     className="min-h-[88px] w-full rounded-2xl border border-[var(--border)] bg-white/90 px-4 py-3 text-sm leading-6 text-[var(--foreground)] shadow-sm dark:bg-slate-900/60"
                                     placeholder="说明它适合什么场景、为什么值得沉淀。"
+                                />
+                            </label>
+                            <label className="block">
+                                <span className="mb-2 block text-sm font-medium text-[var(--foreground)]">标签</span>
+                                <input
+                                    type="text"
+                                    value={saveDraft.tagsInput}
+                                    onChange={(event) =>
+                                        setSaveDraft((current) => ({ ...current, tagsInput: event.target.value }))
+                                    }
+                                    className="w-full rounded-2xl border border-[var(--border)] bg-white/90 px-4 py-3 text-sm text-[var(--foreground)] shadow-sm dark:bg-slate-900/60"
+                                    placeholder="例如：代码评审, 后端, 模板"
                                 />
                             </label>
                             <label className="block">

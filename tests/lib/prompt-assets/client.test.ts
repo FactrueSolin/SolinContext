@@ -30,13 +30,14 @@ describe('prompt-assets client', () => {
 
         await listPromptAssets({
             query: 'review',
+            tag: '代码评审',
             status: 'archived',
             page: 2,
             pageSize: 10,
         });
 
         expect(fetchMock).toHaveBeenCalledWith(
-            '/api/prompt-assets?query=review&status=archived&page=2&pageSize=10',
+            '/api/prompt-assets?query=review&tag=%E4%BB%A3%E7%A0%81%E8%AF%84%E5%AE%A1&status=archived&page=2&pageSize=10',
             undefined
         );
     });
@@ -58,6 +59,7 @@ describe('prompt-assets client', () => {
         await createPromptAsset({
             name: '代码评审提示词',
             description: '用于代码审查',
+            tags: ['代码评审', '高优先级'],
             content: 'Review this code.',
             changeNote: '初始版本',
         });
@@ -70,6 +72,7 @@ describe('prompt-assets client', () => {
             body: JSON.stringify({
                 name: '代码评审提示词',
                 description: '用于代码审查',
+                tags: ['代码评审', '高优先级'],
                 content: 'Review this code.',
                 changeNote: '初始版本',
             }),

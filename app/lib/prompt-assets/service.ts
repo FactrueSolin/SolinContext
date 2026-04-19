@@ -38,6 +38,7 @@ import {
     type RestorePromptAssetVersionInput,
 } from './validators';
 import type { Principal } from '../auth/principal';
+import { arePromptAssetTagSetsEqual } from './tags';
 
 function hashContent(content: string): string {
     return createHash('sha256').update(content).digest('hex');
@@ -96,6 +97,7 @@ export class PromptAssetService {
             name: params.name,
             normalizedName: normalizeName(params.name),
             description: params.description,
+            tags: params.tags,
             currentVersionNumber: 1,
             status: 'active',
             createdBy: principal.userId,
@@ -112,6 +114,7 @@ export class PromptAssetService {
             versionNumber: 1,
             nameSnapshot: params.name,
             descriptionSnapshot: params.description,
+            tagsSnapshot: params.tags,
             content: params.content,
             changeNote: params.changeNote ?? null,
             contentHash: hashContent(params.content),
@@ -160,6 +163,7 @@ export class PromptAssetService {
         const hasNoChanges =
             currentVersion.nameSnapshot === params.name &&
             currentVersion.descriptionSnapshot === params.description &&
+            arePromptAssetTagSetsEqual(currentVersion.tagsSnapshot, params.tags) &&
             currentVersion.contentHash === nextContentHash;
 
         if (hasNoChanges) {
@@ -176,6 +180,7 @@ export class PromptAssetService {
                 name: params.name,
                 normalizedName: normalizeName(params.name),
                 description: params.description,
+                tags: params.tags,
                 currentVersionNumber: nextVersionNumber,
                 updatedBy: principal.userId,
                 updatedAt: now,
@@ -186,6 +191,7 @@ export class PromptAssetService {
                     versionNumber: nextVersionNumber,
                     nameSnapshot: params.name,
                     descriptionSnapshot: params.description,
+                    tagsSnapshot: params.tags,
                     content: params.content,
                     changeNote: params.changeNote ?? null,
                     contentHash: nextContentHash,
@@ -273,6 +279,7 @@ export class PromptAssetService {
                 name: sourceVersion.nameSnapshot,
                 normalizedName: normalizeName(sourceVersion.nameSnapshot),
                 description: sourceVersion.descriptionSnapshot,
+                tags: sourceVersion.tagsSnapshot,
                 currentVersionNumber: nextVersionNumber,
                 updatedBy: principal.userId,
                 updatedAt: now,
@@ -283,6 +290,7 @@ export class PromptAssetService {
                     versionNumber: nextVersionNumber,
                     nameSnapshot: sourceVersion.nameSnapshot,
                     descriptionSnapshot: sourceVersion.descriptionSnapshot,
+                    tagsSnapshot: sourceVersion.tagsSnapshot,
                     content: sourceVersion.content,
                     changeNote: params.changeNote ?? null,
                     contentHash: sourceVersion.contentHash,
@@ -378,6 +386,7 @@ export class PromptAssetService {
             id: asset.id,
             name: asset.name,
             description: asset.description,
+            tags: asset.tags,
             status: asset.status,
             currentVersionNumber: asset.currentVersionNumber,
             createdAt: asset.createdAt,
@@ -391,9 +400,9 @@ export class PromptAssetService {
             ...this.mapSummary(asset),
             currentVersion: {
                 id: version.id,
-                versionNumber: version.versionNumber,
-                content: version.content,
-                changeNote: version.changeNote,
+            versionNumber: version.versionNumber,
+            content: version.content,
+            changeNote: version.changeNote,
                 operationType: version.operationType,
                 sourceVersionId: version.sourceVersionId,
                 createdAt: version.createdAt,
@@ -408,6 +417,7 @@ export class PromptAssetService {
             versionNumber: version.versionNumber,
             nameSnapshot: version.nameSnapshot,
             descriptionSnapshot: version.descriptionSnapshot,
+            tagsSnapshot: version.tagsSnapshot,
             content: version.content,
             changeNote: version.changeNote,
             operationType: version.operationType,
