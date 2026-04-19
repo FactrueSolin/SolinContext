@@ -120,6 +120,75 @@ describe('Projects API', () => {
 
         expect(response.status).toBe(422);
         expect(data.error.code).toBe('VALIDATION_FAILED');
+        expect(mockService.createLegacyProject).not.toHaveBeenCalled();
+    });
+
+    it('returns validation errors when the project name only contains whitespace', async () => {
+        const { POST } = await import('../../app/api/projects/route');
+
+        const response = await POST(createRequest('POST', { name: '   ' }));
+        const data = await response.json();
+
+        expect(response.status).toBe(422);
+        expect(data.error.code).toBe('VALIDATION_FAILED');
+        expect(data.error.details.name).toBeDefined();
+        expect(mockService.createLegacyProject).not.toHaveBeenCalled();
+    });
+
+    it('returns validation errors when the project name is a non-string injection payload', async () => {
+        const { POST } = await import('../../app/api/projects/route');
+
+        const response = await POST(
+            createRequest('POST', {
+                name: {
+                    $gt: '',
+                },
+            })
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(422);
+        expect(data.error.code).toBe('VALIDATION_FAILED');
+        expect(data.error.details.name).toBeDefined();
+        expect(mockService.createLegacyProject).not.toHaveBeenCalled();
+    });
+
+    it('returns validation errors when apiConfig is malformed', async () => {
+        const { POST } = await import('../../app/api/projects/route');
+
+        const response = await POST(
+            createRequest('POST', {
+                name: 'Test Project',
+                apiConfig: {
+                    baseUrl: 'https://proxy.example.com',
+                    apiKey: ['sk-test'],
+                    model: 'claude',
+                },
+            })
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(422);
+        expect(data.error.code).toBe('VALIDATION_FAILED');
+        expect(data.error.details.apiConfig).toBeDefined();
+        expect(mockService.createLegacyProject).not.toHaveBeenCalled();
+    });
+
+    it('returns bad request errors for invalid JSON', async () => {
+        const { POST } = await import('../../app/api/projects/route');
+        const malformedRequest = new Request('http://localhost/api/projects', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-dev-user-id': 'dev-user' },
+            body: '{"name":',
+        });
+
+        const response = await POST(malformedRequest);
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error.code).toBe('BAD_REQUEST');
+        expect(data.error.message).toBe('Invalid JSON request body');
+        expect(mockService.createLegacyProject).not.toHaveBeenCalled();
     });
 
     it('surfaces internal errors from project creation', async () => {

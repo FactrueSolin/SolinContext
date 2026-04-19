@@ -3,6 +3,27 @@ import { apiErrorResponse, parseJsonBody } from '../../../lib/api/http';
 import { resolvePrincipal, requirePermission } from '../../../lib/auth/principal';
 import { getProjectService } from '../../../lib/projects/service';
 
+const legacyApiConfigSchema = z.object({
+    baseUrl: z.string(),
+    apiKey: z.string(),
+    model: z.string(),
+    temperature: z.number().optional(),
+    topP: z.number().optional(),
+    topK: z.number().optional(),
+    maxTokens: z.number().optional(),
+    stopSequences: z.array(z.string()).optional(),
+    stream: z.boolean().optional(),
+    thinking: z.boolean().optional(),
+    thinkingBudget: z.number().optional(),
+    compareModel: z
+        .object({
+            baseUrl: z.string(),
+            apiKey: z.string(),
+            model: z.string(),
+        })
+        .optional(),
+});
+
 const legacyProjectSchema = z.object({
     meta: z.object({
         id: z.string().trim().min(1),
@@ -11,8 +32,8 @@ const legacyProjectSchema = z.object({
         updatedAt: z.string(),
     }),
     systemPrompt: z.string(),
-    messages: z.array(z.any()),
-    apiConfig: z.any(),
+    messages: z.array(z.unknown()),
+    apiConfig: legacyApiConfigSchema,
 });
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -227,6 +227,23 @@ describe('Prompt Assets API', () => {
         });
     });
 
+    it('returns 400 for malformed version JSON bodies', async () => {
+        const { POST } = await import('../../app/api/prompt-assets/[id]/versions/route');
+
+        const response = await POST(
+            createInvalidJsonRequest('/api/prompt-assets/asset-1/versions', '{"name":"Prompt"'),
+            {
+                params: Promise.resolve({ id: 'asset-1' }),
+            }
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error.code).toBe('BAD_REQUEST');
+        expect(data.error.message).toBe('Invalid JSON request body');
+        expect(mockService.createPromptAssetVersion).not.toHaveBeenCalled();
+    });
+
     it('lists version history', async () => {
         const { GET } = await import('../../app/api/prompt-assets/[id]/versions/route');
         mockService.listPromptAssetVersions.mockResolvedValue({
@@ -287,6 +304,44 @@ describe('Prompt Assets API', () => {
         expect(restoreResponse.status).toBe(200);
         expect(archiveResponse.status).toBe(200);
         expect(unarchiveResponse.status).toBe(200);
+    });
+
+    it('returns 400 for malformed restore JSON', async () => {
+        const { POST } = await import('../../app/api/prompt-assets/[id]/restore/route');
+
+        const response = await POST(
+            createInvalidJsonRequest('/api/prompt-assets/asset-1/restore', '{"versionId":"v1"'),
+            {
+                params: Promise.resolve({ id: 'asset-1' }),
+            }
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error.code).toBe('BAD_REQUEST');
+        expect(data.error.message).toBe('Invalid JSON request body');
+        expect(mockService.restorePromptAssetVersion).not.toHaveBeenCalled();
+    });
+
+    it('returns 422 when restore payload contains an overlong injected version id', async () => {
+        const { POST } = await import('../../app/api/prompt-assets/[id]/restore/route');
+
+        const response = await POST(
+            createJsonRequest('/api/prompt-assets/asset-1/restore', {
+                versionId: 'x'.repeat(65),
+                changeNote: 'restore',
+                expectedVersionNumber: 2,
+            }),
+            {
+                params: Promise.resolve({ id: 'asset-1' }),
+            }
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(422);
+        expect(data.error.code).toBe('VALIDATION_FAILED');
+        expect(data.error.details.versionId).toBeDefined();
+        expect(mockService.restorePromptAssetVersion).not.toHaveBeenCalled();
     });
 
     it('maps service errors through the shared API envelope', async () => {

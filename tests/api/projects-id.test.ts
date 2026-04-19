@@ -96,7 +96,7 @@ describe('Project By ID API', () => {
         await expect(response.json()).resolves.toEqual(mockProjectData.meta);
     });
 
-    it('returns validation errors for malformed JSON', async () => {
+    it('returns bad request errors for malformed JSON', async () => {
         const { PUT } = await import('../../app/api/projects/[id]/route');
         const malformedRequest = new Request('http://localhost/api/projects/123', {
             method: 'PUT',
@@ -109,6 +109,53 @@ describe('Project By ID API', () => {
 
         expect(response.status).toBe(400);
         expect(data.error.code).toBe('BAD_REQUEST');
+        expect(mockService.updateLegacyProject).not.toHaveBeenCalled();
+    });
+
+    it('returns validation errors when the update payload is missing project metadata', async () => {
+        const { PUT } = await import('../../app/api/projects/[id]/route');
+
+        const response = await PUT(
+            createRequest('PUT', {
+                systemPrompt: 'prompt',
+                messages: [],
+                apiConfig: {
+                    baseUrl: 'url',
+                    apiKey: 'key',
+                    model: 'model',
+                },
+            }),
+            { params: Promise.resolve({ id: '123' }) }
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(422);
+        expect(data.error.code).toBe('VALIDATION_FAILED');
+        expect(data.error.details.meta).toBeDefined();
+        expect(mockService.updateLegacyProject).not.toHaveBeenCalled();
+    });
+
+    it('returns validation errors when apiConfig contains a non-string malicious value', async () => {
+        const { PUT } = await import('../../app/api/projects/[id]/route');
+
+        const response = await PUT(
+            createRequest('PUT', {
+                ...mockProjectData,
+                apiConfig: {
+                    ...mockProjectData.apiConfig,
+                    model: {
+                        $ne: '',
+                    },
+                },
+            }),
+            { params: Promise.resolve({ id: '123' }) }
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(422);
+        expect(data.error.code).toBe('VALIDATION_FAILED');
+        expect(data.error.details.apiConfig).toBeDefined();
+        expect(mockService.updateLegacyProject).not.toHaveBeenCalled();
     });
 
     it('deletes the target project', async () => {
