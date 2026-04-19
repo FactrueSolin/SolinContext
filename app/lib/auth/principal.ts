@@ -115,8 +115,11 @@ export async function listAccessibleWorkspaces(request: Request) {
     }));
 }
 
-export async function getCurrentUserSummary(request: Request) {
-    const principal = await resolvePrincipal(request);
+export async function getCurrentUserSummary(
+    request: Request,
+    options: { workspaceSlug?: string } = {}
+) {
+    const principal = await resolvePrincipal(request, options);
 
     return {
         user: {
@@ -125,9 +128,18 @@ export async function getCurrentUserSummary(request: Request) {
             name: principal.name,
             avatarUrl: principal.avatarUrl,
         },
+        activeWorkspace: {
+            id: principal.activeWorkspaceId,
+            slug: principal.activeWorkspaceSlug,
+            name: principal.activeWorkspaceName,
+            type: principal.activeWorkspaceType,
+            role: principal.workspaceRole,
+        },
+        permissions: principal.permissions,
         defaultWorkspace: {
             id: principal.activeWorkspaceId,
             slug: principal.activeWorkspaceSlug,
+            name: principal.activeWorkspaceName,
             type: principal.activeWorkspaceType,
             role: principal.workspaceRole,
         },

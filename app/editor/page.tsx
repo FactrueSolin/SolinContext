@@ -1,5 +1,14 @@
-import EditorWorkspace from '../_editor/EditorWorkspace';
+import { redirect } from 'next/navigation';
+import { getDefaultWorkspaceProjectsPath } from '../lib/auth/workspace-home';
 
-export default function EditorPage() {
-  return <EditorWorkspace />;
+export default async function EditorPage() {
+  let target = '/';
+
+  try {
+    target = await getDefaultWorkspaceProjectsPath();
+  } catch {
+    target = '/';
+  }
+
+  redirect(target);
 }

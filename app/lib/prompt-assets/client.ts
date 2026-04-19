@@ -113,9 +113,32 @@ async function request<T>(input: RequestInfo, init?: RequestInit): Promise<T> {
     return (body as PromptAssetApiSuccessBody<T>).data;
 }
 
-export function listPromptAssets(params: ListPromptAssetsParams = {}) {
+function getPromptAssetBasePath(workspaceSlug?: string | null) {
+    return workspaceSlug
+        ? `/api/workspaces/${encodeURIComponent(workspaceSlug)}/prompt-assets`
+        : '/api/prompt-assets';
+}
+
+export function listPromptAssets(params?: ListPromptAssetsParams): Promise<PaginatedData<PromptAssetSummary>>;
+export function listPromptAssets(
+    workspaceSlug: string | null | undefined,
+    params?: ListPromptAssetsParams
+): Promise<PaginatedData<PromptAssetSummary>>;
+export function listPromptAssets(
+    workspaceSlugOrParams?: string | null | ListPromptAssetsParams,
+    maybeParams: ListPromptAssetsParams = {}
+) {
+    const workspaceSlug =
+        typeof workspaceSlugOrParams === 'string' || workspaceSlugOrParams == null
+            ? workspaceSlugOrParams
+            : undefined;
+    const params =
+        typeof workspaceSlugOrParams === 'string' || workspaceSlugOrParams == null
+            ? maybeParams
+            : workspaceSlugOrParams;
+
     return request<PaginatedData<PromptAssetSummary>>(
-        `/api/prompt-assets${buildSearch({
+        `${getPromptAssetBasePath(workspaceSlug)}${buildSearch({
             query: params.query,
             status: params.status,
             page: params.page,
@@ -124,12 +147,32 @@ export function listPromptAssets(params: ListPromptAssetsParams = {}) {
     );
 }
 
-export function getPromptAssetDetail(assetId: string) {
-    return request<PromptAssetDetail>(`/api/prompt-assets/${assetId}`);
+export function getPromptAssetDetail(assetId: string): Promise<PromptAssetDetail>;
+export function getPromptAssetDetail(
+    workspaceSlug: string | null | undefined,
+    assetId: string
+): Promise<PromptAssetDetail>;
+export function getPromptAssetDetail(
+    workspaceSlugOrAssetId: string | null | undefined,
+    maybeAssetId?: string
+) {
+    const workspaceSlug = maybeAssetId === undefined ? undefined : workspaceSlugOrAssetId;
+    const assetId = maybeAssetId ?? (workspaceSlugOrAssetId as string);
+    return request<PromptAssetDetail>(`${getPromptAssetBasePath(workspaceSlug)}/${assetId}`);
 }
 
-export function createPromptAsset(payload: CreatePromptAssetPayload) {
-    return request<PromptAssetDetail>('/api/prompt-assets', {
+export function createPromptAsset(payload: CreatePromptAssetPayload): Promise<PromptAssetDetail>;
+export function createPromptAsset(
+    workspaceSlug: string | null | undefined,
+    payload: CreatePromptAssetPayload
+): Promise<PromptAssetDetail>;
+export function createPromptAsset(
+    workspaceSlugOrPayload: string | null | undefined | CreatePromptAssetPayload,
+    maybePayload?: CreatePromptAssetPayload
+) {
+    const workspaceSlug = maybePayload ? (workspaceSlugOrPayload as string | null | undefined) : undefined;
+    const payload = maybePayload ?? (workspaceSlugOrPayload as CreatePromptAssetPayload);
+    return request<PromptAssetDetail>(getPromptAssetBasePath(workspaceSlug), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -138,8 +181,24 @@ export function createPromptAsset(payload: CreatePromptAssetPayload) {
     });
 }
 
-export function createPromptAssetVersion(assetId: string, payload: CreatePromptAssetVersionPayload) {
-    return request<PromptAssetDetail>(`/api/prompt-assets/${assetId}/versions`, {
+export function createPromptAssetVersion(
+    assetId: string,
+    payload: CreatePromptAssetVersionPayload
+): Promise<PromptAssetDetail>;
+export function createPromptAssetVersion(
+    workspaceSlug: string | null | undefined,
+    assetId: string,
+    payload: CreatePromptAssetVersionPayload
+) : Promise<PromptAssetDetail>;
+export function createPromptAssetVersion(
+    workspaceSlugOrAssetId: string | null | undefined,
+    assetIdOrPayload: string | CreatePromptAssetVersionPayload,
+    maybePayload?: CreatePromptAssetVersionPayload
+) {
+    const workspaceSlug = maybePayload ? workspaceSlugOrAssetId : undefined;
+    const assetId = maybePayload ? (assetIdOrPayload as string) : (workspaceSlugOrAssetId as string);
+    const payload = maybePayload ?? (assetIdOrPayload as CreatePromptAssetVersionPayload);
+    return request<PromptAssetDetail>(`${getPromptAssetBasePath(workspaceSlug)}/${assetId}/versions`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -148,17 +207,57 @@ export function createPromptAssetVersion(assetId: string, payload: CreatePromptA
     });
 }
 
-export function listPromptAssetVersions(assetId: string, params: ListPromptAssetVersionsParams = {}) {
+export function listPromptAssetVersions(
+    assetId: string,
+    params?: ListPromptAssetVersionsParams
+): Promise<PaginatedData<PromptAssetVersionItem>>;
+export function listPromptAssetVersions(
+    workspaceSlug: string | null | undefined,
+    assetId: string,
+    params: ListPromptAssetVersionsParams = {}
+) : Promise<PaginatedData<PromptAssetVersionItem>>;
+export function listPromptAssetVersions(
+    workspaceSlugOrAssetId: string | null | undefined,
+    assetIdOrParams?: string | ListPromptAssetVersionsParams,
+    maybeParams: ListPromptAssetVersionsParams = {}
+) {
+    const workspaceSlug =
+        typeof assetIdOrParams === 'string' ? workspaceSlugOrAssetId : undefined;
+    const assetId =
+        typeof assetIdOrParams === 'string'
+            ? assetIdOrParams
+            : (workspaceSlugOrAssetId as string);
+    const params =
+        typeof assetIdOrParams === 'string'
+            ? maybeParams
+            : (assetIdOrParams ?? {});
+
     return request<PaginatedData<PromptAssetVersionItem>>(
-        `/api/prompt-assets/${assetId}/versions${buildSearch({
+        `${getPromptAssetBasePath(workspaceSlug)}/${assetId}/versions${buildSearch({
             page: params.page,
             pageSize: params.pageSize,
         })}`
     );
 }
 
-export function restorePromptAssetVersion(assetId: string, payload: RestorePromptAssetVersionPayload) {
-    return request<PromptAssetDetail>(`/api/prompt-assets/${assetId}/restore`, {
+export function restorePromptAssetVersion(
+    assetId: string,
+    payload: RestorePromptAssetVersionPayload
+): Promise<PromptAssetDetail>;
+export function restorePromptAssetVersion(
+    workspaceSlug: string | null | undefined,
+    assetId: string,
+    payload: RestorePromptAssetVersionPayload
+) : Promise<PromptAssetDetail>;
+export function restorePromptAssetVersion(
+    workspaceSlugOrAssetId: string | null | undefined,
+    assetIdOrPayload: string | RestorePromptAssetVersionPayload,
+    maybePayload?: RestorePromptAssetVersionPayload
+) {
+    const workspaceSlug = maybePayload ? workspaceSlugOrAssetId : undefined;
+    const assetId = maybePayload ? (assetIdOrPayload as string) : (workspaceSlugOrAssetId as string);
+    const payload = maybePayload ?? (assetIdOrPayload as RestorePromptAssetVersionPayload);
+    return request<PromptAssetDetail>(`${getPromptAssetBasePath(workspaceSlug)}/${assetId}/restore`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -167,14 +266,34 @@ export function restorePromptAssetVersion(assetId: string, payload: RestorePromp
     });
 }
 
-export function archivePromptAsset(assetId: string) {
-    return request<PromptAssetSummary>(`/api/prompt-assets/${assetId}/archive`, {
+export function archivePromptAsset(assetId: string): Promise<PromptAssetSummary>;
+export function archivePromptAsset(
+    workspaceSlug: string | null | undefined,
+    assetId: string
+): Promise<PromptAssetSummary>;
+export function archivePromptAsset(
+    workspaceSlugOrAssetId: string | null | undefined,
+    maybeAssetId?: string
+) {
+    const workspaceSlug = maybeAssetId === undefined ? undefined : workspaceSlugOrAssetId;
+    const assetId = maybeAssetId ?? (workspaceSlugOrAssetId as string);
+    return request<PromptAssetSummary>(`${getPromptAssetBasePath(workspaceSlug)}/${assetId}/archive`, {
         method: 'POST',
     });
 }
 
-export function unarchivePromptAsset(assetId: string) {
-    return request<PromptAssetSummary>(`/api/prompt-assets/${assetId}/unarchive`, {
+export function unarchivePromptAsset(assetId: string): Promise<PromptAssetSummary>;
+export function unarchivePromptAsset(
+    workspaceSlug: string | null | undefined,
+    assetId: string
+): Promise<PromptAssetSummary>;
+export function unarchivePromptAsset(
+    workspaceSlugOrAssetId: string | null | undefined,
+    maybeAssetId?: string
+) {
+    const workspaceSlug = maybeAssetId === undefined ? undefined : workspaceSlugOrAssetId;
+    const assetId = maybeAssetId ?? (workspaceSlugOrAssetId as string);
+    return request<PromptAssetSummary>(`${getPromptAssetBasePath(workspaceSlug)}/${assetId}/unarchive`, {
         method: 'POST',
     });
 }

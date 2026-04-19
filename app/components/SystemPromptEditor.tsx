@@ -6,11 +6,13 @@ import { useEditorActions, useEditorState } from '../contexts/EditorContext';
 import { ChevronDown, ChevronRight, Terminal, Eye, Pencil, Sparkles, BookmarkPlus, X } from 'lucide-react';
 import AutoResizeTextarea from './ui/AutoResizeTextarea';
 import MarkdownPreview from './ui/MarkdownPreview';
+import { buildWorkspaceModulePath, getWorkspaceSlugFromWindow } from '../lib/workspace-routing';
 
 function SystemPromptEditor() {
     const { currentProject, promptAssetNotice } = useEditorState();
     const { updateSystemPrompt, setPromptAssetNotice } = useEditorActions();
     const router = useRouter();
+    const workspaceSlug = getWorkspaceSlugFromWindow();
 
     const [isExpanded, setIsExpanded] = useState(true);
     const [isPreview, setIsPreview] = useState(false);
@@ -82,14 +84,14 @@ function SystemPromptEditor() {
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                         <div className="flex flex-wrap items-center gap-2">
                             <button
-                                onClick={() => router.push('/prompt-assets')}
+                                onClick={() => router.push(buildWorkspaceModulePath(workspaceSlug ?? '', 'prompt-assets'))}
                                 className="inline-flex items-center gap-1.5 rounded-full bg-[var(--asset-primary-soft)] px-3 py-1.5 text-xs font-semibold text-[var(--asset-primary)] shadow-sm hover:bg-cyan-100 dark:hover:bg-cyan-950/80"
                             >
                                 <Sparkles size={13} />
                                 从资产应用
                             </button>
                             <button
-                                onClick={() => router.push('/prompt-assets?entry=save')}
+                                onClick={() => router.push(buildWorkspaceModulePath(workspaceSlug ?? '', 'prompt-assets', { entry: 'save' }))}
                                 disabled={!currentProject.systemPrompt.trim()}
                                 className="inline-flex items-center gap-1.5 rounded-full border border-yellow-300/60 bg-white/60 px-3 py-1.5 text-xs font-semibold text-yellow-800 shadow-sm hover:bg-yellow-100/80 disabled:cursor-not-allowed disabled:opacity-45 dark:border-yellow-800/50 dark:bg-yellow-950/20 dark:text-yellow-300 dark:hover:bg-yellow-900/30"
                                 title={currentProject.systemPrompt.trim() ? '保存为资产' : '当前 System Prompt 为空，无法保存为资产'}

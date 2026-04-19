@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEditorActions, useEditorState } from '../contexts/EditorContext';
 import { FolderOpen, Save, Settings, Download, Upload, Code, FileJson, Sparkles } from 'lucide-react';
 import { exportToXmlPrompt, exportToMessageJson } from '../lib/utils';
+import { buildWorkspaceModulePath, getWorkspaceSlugFromWindow } from '../lib/workspace-routing';
 
 function Header() {
     const { currentProject, isSaving, error, showProjectList } = useEditorState();
@@ -14,6 +15,7 @@ function Header() {
         saveProject,
         renameProject,
     } = useEditorActions();
+    const workspaceSlug = getWorkspaceSlugFromWindow();
 
     const [isEditingName, setIsEditingName] = useState(false);
     const [editedName, setEditedName] = useState('');
@@ -58,7 +60,7 @@ function Header() {
         reader.onload = async (e) => {
             try {
                 const content = e.target?.result as string;
-                const projectData = JSON.parse(content);
+                JSON.parse(content);
                 // Assuming we have a way to save this new project data or override current
                 // Since createProject only takes a name, we might need a workaround or API update
                 // For now, we'll try to set it to current and save if id exists, or alert
@@ -227,7 +229,7 @@ function Header() {
                 <div className="w-px h-5 bg-[var(--border)] mx-1 hidden sm:block" />
 
                 <Link
-                    href="/prompt-assets"
+                    href={buildWorkspaceModulePath(workspaceSlug ?? '', 'prompt-assets')}
                     className="inline-flex items-center gap-2 rounded-full px-3 py-2 text-sm font-medium text-[var(--muted-foreground)] transition-colors duration-[var(--transition-fast)] hover:bg-[var(--muted)] active:scale-95"
                     title="提示词资产库"
                 >

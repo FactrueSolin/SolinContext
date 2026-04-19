@@ -34,6 +34,7 @@ import type {
     PromptAssetSummary,
     PromptAssetVersionItem,
 } from '../lib/prompt-assets/dto';
+import { buildWorkspaceModulePath, getWorkspaceSlugFromWindow } from '../lib/workspace-routing';
 
 type DrawerView = 'list' | 'detail' | 'edit' | 'history';
 type AssetFilter = 'all' | PromptAssetStatus;
@@ -207,6 +208,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
         updateSystemPrompt,
     } = useEditor();
     const router = useRouter();
+    const workspaceSlug = getWorkspaceSlugFromWindow();
 
     const [assets, setAssets] = useState<PromptAssetSummary[]>([]);
     const [isLoadingList, setIsLoadingList] = useState(false);
@@ -248,12 +250,19 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
         setListError(null);
 
         try {
-            const data = await listPromptAssets({
-                query: query.trim() || undefined,
-                status: filter,
-                page: 1,
-                pageSize: 50,
-            });
+            const data = workspaceSlug
+                ? await listPromptAssets(workspaceSlug, {
+                      query: query.trim() || undefined,
+                      status: filter,
+                      page: 1,
+                      pageSize: 50,
+                  })
+                : await listPromptAssets({
+                      query: query.trim() || undefined,
+                      status: filter,
+                      page: 1,
+                      pageSize: 50,
+                  });
 
             if (requestId !== listRequestIdRef.current) {
                 return;
@@ -271,7 +280,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                 setIsLoadingList(false);
             }
         }
-    }, [filter, query]);
+    }, [filter, query, workspaceSlug]);
 
     const loadAssetDetail = useCallback(async (assetId: string) => {
         const requestId = ++detailRequestIdRef.current;
@@ -279,7 +288,9 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
         setDetailError(null);
 
         try {
-            const detail = await getPromptAssetDetail(assetId);
+            const detail = workspaceSlug
+                ? await getPromptAssetDetail(workspaceSlug, assetId)
+                : await getPromptAssetDetail(assetId);
 
             if (requestId !== detailRequestIdRef.current) {
                 return;
@@ -302,7 +313,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                 setPendingAction(null);
             }
         }
-    }, []);
+    }, [workspaceSlug]);
 
     const loadAssetHistory = useCallback(async (assetId: string, preferredVersionId?: string | null) => {
         const requestId = ++historyRequestIdRef.current;
@@ -310,10 +321,15 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
         setHistoryError(null);
 
         try {
-            const data = await listPromptAssetVersions(assetId, {
-                page: 1,
-                pageSize: 50,
-            });
+            const data = workspaceSlug
+                ? await listPromptAssetVersions(workspaceSlug, assetId, {
+                      page: 1,
+                      pageSize: 50,
+                  })
+                : await listPromptAssetVersions(assetId, {
+                      page: 1,
+                      pageSize: 50,
+                  });
 
             if (requestId !== historyRequestIdRef.current) {
                 return;
@@ -332,7 +348,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
                 setPendingAction(null);
             }
         }
-    }, []);
+    }, [workspaceSlug]);
 
     useEffect(() => {
         if (!toast) return;
@@ -365,8 +381,8 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
             setShowSaveModal(true);
         }
 
-        router.replace('/prompt-assets', { scroll: false });
-    }, [entry, router]);
+        router.replace(buildWorkspaceModulePath(workspaceSlug ?? '', 'prompt-assets'), { scroll: false });
+    }, [entry, router, workspaceSlug]);
 
     useEffect(() => {
         void loadAssetsForCurrentFilters();
@@ -389,12 +405,15 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
         setPendingAction('create');
 
         try {
-            const detail = await createPromptAsset({
+            const payload = {
                 name: saveDraft.name.trim(),
                 description: saveDraft.description,
                 content: saveDraft.content,
                 changeNote: saveDraft.changeNote.trim() || undefined,
-            });
+            };
+            const detail = workspaceSlug
+                ? await createPromptAsset(workspaceSlug, payload)
+                : await createPromptAsset(payload);
 
             setSelectedAssetId(detail.id);
             setSelectedAssetDetail(detail);
@@ -435,13 +454,16 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
         setPendingAction('saveVersion');
 
         try {
-            const detail = await createPromptAssetVersion(selectedAssetDetail.id, {
+            const payload = {
                 name: editDraft.name.trim(),
                 description: editDraft.description,
                 content: editDraft.content,
                 changeNote: editDraft.changeNote.trim() || undefined,
                 expectedVersionNumber: selectedAssetDetail.currentVersionNumber,
-            });
+            };
+            const detail = workspaceSlug
+                ? await createPromptAssetVersion(workspaceSlug, selectedAssetDetail.id, payload)
+                : await createPromptAssetVersion(selectedAssetDetail.id, payload);
 
             setSelectedAssetDetail(detail);
             setHistoryVersionId(detail.currentVersion.id);
@@ -475,8 +497,12 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
         try {
             const summary =
                 selectedAssetDetail.status === 'archived'
-                    ? await unarchivePromptAsset(selectedAssetDetail.id)
-                    : await archivePromptAsset(selectedAssetDetail.id);
+                    ? workspaceSlug
+                        ? await unarchivePromptAsset(workspaceSlug, selectedAssetDetail.id)
+                        : await unarchivePromptAsset(selectedAssetDetail.id)
+                    : workspaceSlug
+                      ? await archivePromptAsset(workspaceSlug, selectedAssetDetail.id)
+                      : await archivePromptAsset(selectedAssetDetail.id);
 
             setSelectedAssetDetail((current) =>
                 current && current.id === summary.id
@@ -519,7 +545,7 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
             versionLabel: `v${selectedAssetDetail.currentVersion.versionNumber}`,
         });
         setShowApplyConfirm(false);
-        router.push('/');
+        router.push(buildWorkspaceModulePath(workspaceSlug ?? '', 'projects'));
     };
 
     const handleOpenHistory = async () => {
@@ -539,11 +565,14 @@ export default function PromptAssetDrawer({ entry = null }: { entry?: string | n
         setPendingAction('restore');
 
         try {
-            const detail = await restorePromptAssetVersion(selectedAssetDetail.id, {
+            const payload = {
                 versionId: selectedHistoryVersion.id,
                 changeNote: `从 v${selectedHistoryVersion.versionNumber} 恢复`,
                 expectedVersionNumber: selectedAssetDetail.currentVersionNumber,
-            });
+            };
+            const detail = workspaceSlug
+                ? await restorePromptAssetVersion(workspaceSlug, selectedAssetDetail.id, payload)
+                : await restorePromptAssetVersion(selectedAssetDetail.id, payload);
 
             setSelectedAssetDetail(detail);
             setHistoryVersionId(detail.currentVersion.id);

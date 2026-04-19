@@ -1,27 +1,41 @@
 'use client';
 
 import React, { useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { User, Bot } from 'lucide-react';
 import Header from '../components/Header';
 import ProjectListPanel from '../components/ProjectListPanel';
 import ApiConfigPanel from '../components/ApiConfigPanel';
 import SystemPromptEditor from '../components/SystemPromptEditor';
 import MessageList from '../components/MessageList';
+import WorkspaceTopbar from '../components/WorkspaceTopbar';
 import { useEditor } from '../contexts/EditorContext';
 
 export default function EditorWorkspace() {
+  const searchParams = useSearchParams();
   const {
     state: { currentProject },
     loadProjects,
+    loadProject,
     addMessage,
   } = useEditor();
+  const projectId = searchParams.get('projectId');
 
   useEffect(() => {
-    loadProjects();
+    void loadProjects();
   }, [loadProjects]);
 
+  useEffect(() => {
+    if (!projectId || currentProject?.meta.id === projectId) {
+      return;
+    }
+
+    void loadProject(projectId);
+  }, [currentProject?.meta.id, loadProject, projectId]);
+
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
+    <div className="flex min-h-screen flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
+      <WorkspaceTopbar />
       <Header />
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">

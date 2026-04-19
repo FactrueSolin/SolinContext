@@ -228,6 +228,8 @@ export interface ProjectData {
   systemPrompt: string;
   messages: EditorMessage[];
   apiConfig: ApiConfig;
+  currentRevisionId?: string | null;
+  defaultCredentialId?: string | null;
 }
 
 // ==================== Prompt Asset Types ====================

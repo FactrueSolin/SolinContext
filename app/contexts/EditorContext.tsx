@@ -23,6 +23,68 @@ import type {
     PromptAssetNotice
 } from '../types';
 import { createDefaultApiConfig, createEmptyMessage, generateId } from '../lib/utils';
+import { getWorkspaceSlugFromWindow } from '../lib/workspace-routing';
+
+interface ApiEnvelope<T> {
+    data: T;
+}
+
+interface WorkspaceProjectListResponse {
+    items: ProjectMeta[];
+}
+
+interface WorkspaceProjectDetail {
+    id: string;
+    name: string;
+    createdAt: string;
+    updatedAt: string;
+    systemPrompt: string;
+    defaultCredentialId: string | null;
+    currentRevisionId: string | null;
+    messages: EditorMessage[];
+    apiConfig: ApiConfig;
+}
+
+function extractApiData<T>(payload: ApiEnvelope<T> | T): T {
+    if (
+        payload &&
+        typeof payload === 'object' &&
+        'data' in payload &&
+        Object.keys(payload as Record<string, unknown>).length === 1
+    ) {
+        return (payload as ApiEnvelope<T>).data;
+    }
+
+    return payload as T;
+}
+
+function mapWorkspaceProjectDetail(detail: WorkspaceProjectDetail): ProjectData {
+    return {
+        meta: {
+            id: detail.id,
+            name: detail.name,
+            createdAt: detail.createdAt,
+            updatedAt: detail.updatedAt,
+        },
+        systemPrompt: detail.systemPrompt,
+        messages: detail.messages,
+        apiConfig: detail.apiConfig,
+        currentRevisionId: detail.currentRevisionId,
+        defaultCredentialId: detail.defaultCredentialId,
+    };
+}
+
+function getProjectCollectionEndpoint(workspaceSlug?: string | null): string {
+    return workspaceSlug
+        ? `/api/workspaces/${encodeURIComponent(workspaceSlug)}/projects`
+        : '/api/projects';
+}
+
+function getProjectDetailEndpoint(id: string, workspaceSlug?: string | null): string {
+    return workspaceSlug
+        ? `/api/workspaces/${encodeURIComponent(workspaceSlug)}/projects/${encodeURIComponent(id)}`
+        : `/api/projects/${id}`;
+}
 
 export interface EditorState {
     projects: ProjectMeta[];
@@ -616,49 +678,77 @@ async function consumeStreamResponse(
 
 export function EditorProvider({ children }: { children: ReactNode }) {
     const [state, dispatch] = useReducer(editorReducer, initialState);
+    const workspaceSlug = getWorkspaceSlugFromWindow();
     // 存储 AbortController 引用，key 为 messageId
     const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
 
     const loadProjects = useCallback(async () => {
         dispatch({ type: 'SET_LOADING', isLoading: true });
         try {
-            const res = await fetch('/api/projects');
+            const res = await fetch(getProjectCollectionEndpoint(workspaceSlug));
             if (!res.ok) throw new Error('Failed to load projects');
-            const data = await res.json();
-            dispatch({ type: 'SET_PROJECTS', projects: data });
+            const payload = await res.json() as ApiEnvelope<WorkspaceProjectListResponse> | ProjectMeta[];
+            const data = extractApiData(payload);
+            const projects = Array.isArray(data) ? data : data.items;
+            dispatch({ type: 'SET_PROJECTS', projects });
             dispatch({ type: 'SET_ERROR', error: null });
         } catch (err) {
             dispatch({ type: 'SET_ERROR', error: err instanceof Error ? err.message : String(err) });
         } finally {
             dispatch({ type: 'SET_LOADING', isLoading: false });
         }
-    }, []);
+    }, [workspaceSlug]);
 
     const loadProject = useCallback(async (id: string) => {
         dispatch({ type: 'SET_LOADING', isLoading: true });
         try {
-            const res = await fetch(`/api/projects/${id}`);
+            const res = await fetch(getProjectDetailEndpoint(id, workspaceSlug));
             if (!res.ok) throw new Error('Failed to load project');
-            const data = await res.json();
-            dispatch({ type: 'SET_CURRENT_PROJECT', project: data });
+            const payload = await res.json() as ApiEnvelope<WorkspaceProjectDetail> | ProjectData;
+            const data = extractApiData(payload);
+            dispatch({
+                type: 'SET_CURRENT_PROJECT',
+                project: workspaceSlug ? mapWorkspaceProjectDetail(data as WorkspaceProjectDetail) : (data as ProjectData),
+            });
             dispatch({ type: 'SET_ERROR', error: null });
         } catch (err) {
             dispatch({ type: 'SET_ERROR', error: err instanceof Error ? err.message : String(err) });
         } finally {
             dispatch({ type: 'SET_LOADING', isLoading: false });
         }
-    }, []);
+    }, [workspaceSlug]);
 
     const saveProject = useCallback(async () => {
         if (!state.currentProject) return;
         dispatch({ type: 'SET_SAVING', isSaving: true });
         try {
-            const res = await fetch(`/api/projects/${state.currentProject.meta.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(state.currentProject),
-            });
+            const request = workspaceSlug
+                ? {
+                      method: 'PATCH',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                          name: state.currentProject.meta.name,
+                          systemPrompt: state.currentProject.systemPrompt,
+                          messages: state.currentProject.messages,
+                          apiConfig: state.currentProject.apiConfig,
+                          defaultCredentialId: state.currentProject.defaultCredentialId ?? null,
+                          expectedRevisionId: state.currentProject.currentRevisionId ?? null,
+                      }),
+                  }
+                : {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(state.currentProject),
+                  };
+            const res = await fetch(getProjectDetailEndpoint(state.currentProject.meta.id, workspaceSlug), request);
             if (!res.ok) throw new Error('Failed to save project');
+            if (workspaceSlug) {
+                const payload = await res.json() as ApiEnvelope<WorkspaceProjectDetail>;
+                dispatch({
+                    type: 'SET_CURRENT_PROJECT',
+                    project: mapWorkspaceProjectDetail(extractApiData(payload)),
+                });
+            }
             dispatch({ type: 'SET_ERROR', error: null });
             await loadProjects();
         } catch (err) {
@@ -666,7 +756,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         } finally {
             dispatch({ type: 'SET_SAVING', isSaving: false });
         }
-    }, [state.currentProject, loadProjects]);
+    }, [loadProjects, state.currentProject, workspaceSlug]);
 
     const createProject = useCallback(async (name: string) => {
         dispatch({ type: 'SET_LOADING', isLoading: true });
@@ -681,13 +771,21 @@ export function EditorProvider({ children }: { children: ReactNode }) {
                 console.error('Failed to load API config from localStorage', e);
             }
 
-            const res = await fetch('/api/projects', {
+            const res = await fetch(getProjectCollectionEndpoint(workspaceSlug), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name, apiConfig: defaultApiConfig }),
+                body: JSON.stringify({
+                    name,
+                    systemPrompt: 'You are a helpful assistant.',
+                    messages: [],
+                    apiConfig: defaultApiConfig,
+                }),
             });
             if (!res.ok) throw new Error('Failed to create project');
-            const data = await res.json() as ProjectData;
+            const payload = await res.json() as ApiEnvelope<WorkspaceProjectDetail> | ProjectData;
+            const data = workspaceSlug
+                ? mapWorkspaceProjectDetail(extractApiData(payload as ApiEnvelope<WorkspaceProjectDetail>))
+                : (payload as ProjectData);
             dispatch({ type: 'SET_CURRENT_PROJECT', project: data });
             dispatch({ type: 'SET_ERROR', error: null });
             await loadProjects();
@@ -698,12 +796,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         } finally {
             dispatch({ type: 'SET_LOADING', isLoading: false });
         }
-    }, [loadProjects]);
+    }, [loadProjects, workspaceSlug]);
 
     const deleteProject = useCallback(async (id: string) => {
         dispatch({ type: 'SET_LOADING', isLoading: true });
         try {
-            const res = await fetch(`/api/projects/${id}`, { method: 'DELETE' });
+            const res = await fetch(getProjectDetailEndpoint(id, workspaceSlug), { method: 'DELETE' });
             if (!res.ok) throw new Error('Failed to delete project');
             if (state.currentProject?.meta.id === id) {
                 dispatch({ type: 'SET_CURRENT_PROJECT', project: null });
@@ -715,7 +813,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         } finally {
             dispatch({ type: 'SET_LOADING', isLoading: false });
         }
-    }, [state.currentProject, loadProjects]);
+    }, [loadProjects, state.currentProject, workspaceSlug]);
 
     const generateForMessage = useCallback(async (messageId: string) => {
         if (!state.currentProject) return;
@@ -1010,7 +1108,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         }
 
         const previousName = state.currentProject.meta.name;
-        const updatedProject: ProjectData = {
+            const updatedProject: ProjectData = {
             ...state.currentProject,
             meta: {
                 ...state.currentProject.meta,
@@ -1022,16 +1120,35 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'SET_SAVING', isSaving: true });
 
         try {
-            const response = await fetch(`/api/projects/${state.currentProject.meta.id}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(updatedProject),
-            });
+            const response = await fetch(getProjectDetailEndpoint(state.currentProject.meta.id, workspaceSlug), workspaceSlug
+                ? {
+                      method: 'PATCH',
+                      headers: {
+                          'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                          name: normalizedName,
+                          expectedRevisionId: state.currentProject.currentRevisionId ?? null,
+                      }),
+                  }
+                : {
+                      method: 'PUT',
+                      headers: {
+                          'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify(updatedProject),
+                  });
 
             if (!response.ok) {
                 throw new Error('Failed to update project name');
+            }
+
+            if (workspaceSlug) {
+                const payload = await response.json() as ApiEnvelope<WorkspaceProjectDetail>;
+                dispatch({
+                    type: 'SET_CURRENT_PROJECT',
+                    project: mapWorkspaceProjectDetail(extractApiData(payload)),
+                });
             }
 
             dispatch({ type: 'SET_ERROR', error: null });
@@ -1043,7 +1160,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         } finally {
             dispatch({ type: 'SET_SAVING', isSaving: false });
         }
-    }, [state.currentProject, loadProjects]);
+    }, [loadProjects, state.currentProject, workspaceSlug]);
 
     const actions = useMemo<EditorActions>(() => ({
         dispatch,

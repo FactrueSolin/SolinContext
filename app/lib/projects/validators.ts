@@ -31,12 +31,16 @@ export const listProjectsQuerySchema = z.object({
 export const createProjectSchema = z.object({
     name: z.string().trim().min(1).max(120),
     systemPrompt: z.string().trim().optional().default('You are a helpful assistant.'),
+    messages: z.array(z.any()).optional().default([]),
+    apiConfig: z.any().optional(),
     defaultCredentialId: z.string().trim().min(1).max(64).optional(),
 });
 
 export const updateProjectSchema = z.object({
     name: z.string().trim().min(1).max(120).optional(),
     systemPrompt: z.string().trim().optional(),
+    messages: z.array(z.any()).optional(),
+    apiConfig: z.any().optional(),
     defaultCredentialId: z.string().trim().min(1).max(64).nullable().optional(),
     expectedRevisionId: z.string().trim().min(1).max(64).nullable().optional(),
 });

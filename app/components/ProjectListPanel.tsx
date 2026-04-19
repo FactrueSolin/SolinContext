@@ -1,8 +1,18 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useEditor } from '../contexts/EditorContext';
 import { Plus, Trash2, X, FolderOpen, Copy } from 'lucide-react';
+import { buildWorkspaceModulePath, getWorkspaceSlugFromWindow } from '../lib/workspace-routing';
+
+function useOptionalRouter() {
+    try {
+        return useRouter();
+    } catch {
+        return null;
+    }
+}
 
 export default function ProjectListPanel() {
     const {
@@ -13,6 +23,8 @@ export default function ProjectListPanel() {
         createProject,
         deleteProject,
     } = useEditor();
+    const router = useOptionalRouter();
+    const workspaceSlug = getWorkspaceSlugFromWindow();
 
     const [isCreating, setIsCreating] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
@@ -28,9 +40,14 @@ export default function ProjectListPanel() {
     const handleCreateProject = async (e: React.FormEvent) => {
         e.preventDefault();
         if (newProjectName.trim()) {
-            await createProject(newProjectName.trim());
+            const project = await createProject(newProjectName.trim());
             setNewProjectName('');
             setIsCreating(false);
+            router?.replace(
+                buildWorkspaceModulePath(workspaceSlug ?? '', 'projects', {
+                    projectId: project.meta.id,
+                })
+            );
         }
     };
 
@@ -42,13 +59,25 @@ export default function ProjectListPanel() {
 
     const handleDuplicateProject = async (id: string) => {
         try {
-            const res = await fetch(`/api/projects/${id}/duplicate`, { method: 'POST' });
+            const endpoint = workspaceSlug
+                ? `/api/workspaces/${encodeURIComponent(workspaceSlug)}/projects/${encodeURIComponent(id)}/duplicate`
+                : `/api/projects/${id}/duplicate`;
+            const res = await fetch(endpoint, { method: 'POST' });
             if (!res.ok) {
                 const data = await res.json() as { error: string };
                 alert(data.error || '复制项目失败');
                 return;
             }
+            const data = await res.json() as { data?: { id?: string } | null; id?: string };
             await loadProjects();
+            const duplicatedProjectId = data.data?.id ?? data.id ?? null;
+            if (duplicatedProjectId) {
+                router?.replace(
+                    buildWorkspaceModulePath(workspaceSlug ?? '', 'projects', {
+                        projectId: duplicatedProjectId,
+                    })
+                );
+            }
         } catch {
             alert('复制项目失败');
         }
@@ -137,7 +166,12 @@ export default function ProjectListPanel() {
                                     }`}
                                     onClick={() => {
                                         if (!isCurrent) {
-                                            loadProject(project.id);
+                                            void loadProject(project.id);
+                                            router?.replace(
+                                                buildWorkspaceModulePath(workspaceSlug ?? '', 'projects', {
+                                                    projectId: project.id,
+                                                })
+                                            );
                                         }
                                     }}
                                 >

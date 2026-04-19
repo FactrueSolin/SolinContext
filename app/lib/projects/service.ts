@@ -89,8 +89,8 @@ export class ProjectService {
             snapshot: {
                 name: input.name,
                 systemPrompt: input.systemPrompt,
-                messages: [],
-                apiConfig: createDefaultApiConfig(),
+                messages: input.messages,
+                apiConfig: input.apiConfig ?? createDefaultApiConfig(),
                 defaultCredentialId: input.defaultCredentialId ?? null,
             },
         });
@@ -142,8 +142,8 @@ export class ProjectService {
         const nextSnapshot: ProjectSnapshot = {
             name: input.name ?? currentDetail.name,
             systemPrompt: input.systemPrompt ?? currentDetail.systemPrompt,
-            messages: currentDetail.messages,
-            apiConfig: currentDetail.apiConfig,
+            messages: input.messages ?? currentDetail.messages,
+            apiConfig: input.apiConfig ?? currentDetail.apiConfig,
             defaultCredentialId:
                 input.defaultCredentialId === undefined
                     ? currentDetail.defaultCredentialId
