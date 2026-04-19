@@ -1,17 +1,18 @@
-import { promptAssetErrorResponse, promptAssetSuccess } from '../../../../../lib/prompt-assets/http';
+import { apiErrorResponse, apiSuccess } from '../../../../../lib/api/http';
+import { resolvePrincipal, requirePermission } from '../../../../../lib/auth/principal';
 import { getPromptAssetService } from '../../../../../lib/prompt-assets/service';
 
-export const runtime = 'nodejs';
-
 export async function GET(
-    _request: Request,
+    request: Request,
     { params }: { params: Promise<{ id: string; versionId: string }> }
 ) {
     try {
         const { id, versionId } = await params;
-        const data = await getPromptAssetService().getPromptAssetVersion(id, versionId);
-        return promptAssetSuccess(data);
+        const principal = await resolvePrincipal(request);
+        requirePermission(principal, 'prompt_asset:read');
+        const data = await getPromptAssetService().getPromptAssetVersion(principal, id, versionId);
+        return apiSuccess(data);
     } catch (error) {
-        return promptAssetErrorResponse(error);
+        return apiErrorResponse(request, error);
     }
 }

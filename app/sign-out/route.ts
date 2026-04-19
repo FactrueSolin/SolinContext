@@ -1,0 +1,6 @@
+import { signOut } from '@logto/next/server-actions';
+import { getLogtoConfig } from '../logto';
+
+export async function GET() {
+    await signOut(getLogtoConfig(), getLogtoConfig().baseUrl);
+}

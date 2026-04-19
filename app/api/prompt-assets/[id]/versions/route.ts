@@ -1,17 +1,11 @@
-import { type NextRequest } from 'next/server';
-import {
-    parseJsonBody,
-    parseSearchParams,
-    promptAssetErrorResponse,
-    promptAssetSuccess,
-} from '../../../../lib/prompt-assets/http';
+import { NextRequest } from 'next/server';
+import { apiErrorResponse, apiSuccess, parseJsonBody, parseSearchParams } from '../../../../lib/api/http';
+import { resolvePrincipal, requirePermission } from '../../../../lib/auth/principal';
 import { getPromptAssetService } from '../../../../lib/prompt-assets/service';
 import {
     createPromptAssetVersionSchema,
     promptAssetVersionsQuerySchema,
 } from '../../../../lib/prompt-assets/validators';
-
-export const runtime = 'nodejs';
 
 export async function GET(
     request: NextRequest,
@@ -19,11 +13,13 @@ export async function GET(
 ) {
     try {
         const { id } = await params;
+        const principal = await resolvePrincipal(request);
+        requirePermission(principal, 'prompt_asset:read');
         const query = parseSearchParams(request.nextUrl.searchParams, promptAssetVersionsQuerySchema);
-        const data = await getPromptAssetService().listPromptAssetVersions(id, query);
-        return promptAssetSuccess(data);
+        const data = await getPromptAssetService().listPromptAssetVersions(principal, id, query);
+        return apiSuccess(data);
     } catch (error) {
-        return promptAssetErrorResponse(error);
+        return apiErrorResponse(request, error);
     }
 }
 
@@ -33,10 +29,12 @@ export async function POST(
 ) {
     try {
         const { id } = await params;
+        const principal = await resolvePrincipal(request);
+        requirePermission(principal, 'prompt_asset:write');
         const body = await parseJsonBody(request, createPromptAssetVersionSchema);
-        const data = await getPromptAssetService().createPromptAssetVersion(id, body);
-        return promptAssetSuccess(data, 201);
+        const data = await getPromptAssetService().createPromptAssetVersion(principal, id, body);
+        return apiSuccess(data, { status: 201 });
     } catch (error) {
-        return promptAssetErrorResponse(error);
+        return apiErrorResponse(request, error);
     }
 }

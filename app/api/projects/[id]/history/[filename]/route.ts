@@ -1,17 +1,17 @@
-import { NextResponse } from 'next/server';
-import { ProjectStore } from '../../../../../lib/project-store';
+import { apiErrorResponse } from '../../../../../lib/api/http';
+import { resolvePrincipal, requirePermission } from '../../../../../lib/auth/principal';
+import { getProjectService } from '../../../../../lib/projects/service';
 
-// GET /api/projects/[id]/history/[filename] - 获取历史版本详情
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ id: string; filename: string }> }
 ) {
     try {
         const { id, filename } = await params;
-        const data = await ProjectStore.getHistoryEntry(id, filename);
-        return NextResponse.json(data);
+        const principal = await resolvePrincipal(request);
+        requirePermission(principal, 'project:read');
+        return Response.json(getProjectService().getRevisionByCompatFilename(principal, id, filename));
     } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: message }, { status: 404 });
+        return apiErrorResponse(request, error);
     }
 }

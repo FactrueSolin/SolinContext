@@ -1,4 +1,5 @@
 import { ZodError } from 'zod';
+import { ApiError } from '../api/errors';
 
 export type PromptAssetErrorCode =
     | 'PROMPT_ASSET_BAD_REQUEST'
@@ -10,17 +11,10 @@ export type PromptAssetErrorCode =
     | 'PROMPT_ASSET_VALIDATION_FAILED'
     | 'PROMPT_ASSET_INTERNAL_ERROR';
 
-export class PromptAssetError extends Error {
-    readonly status: number;
-    readonly code: PromptAssetErrorCode;
-    readonly details: unknown;
-
+export class PromptAssetError extends ApiError {
     constructor(status: number, code: PromptAssetErrorCode, message: string, details: unknown = null) {
-        super(message);
+        super(status, code, message, details);
         this.name = 'PromptAssetError';
-        this.status = status;
-        this.code = code;
-        this.details = details;
     }
 }
 

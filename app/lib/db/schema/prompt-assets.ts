@@ -8,6 +8,7 @@ import {
     text,
     uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
+import { users, workspaces } from './auth';
 
 export const promptAssetStatuses = ['active', 'archived'] as const;
 export const promptAssetOperationTypes = ['create', 'update', 'restore', 'import'] as const;
@@ -16,19 +17,37 @@ export const promptAssets = sqliteTable(
     'prompt_assets',
     {
         id: text('id').primaryKey(),
+        workspaceId: text('workspace_id')
+            .notNull()
+            .references(() => workspaces.id, { onDelete: 'cascade' }),
         name: text('name').notNull(),
+        normalizedName: text('normalized_name').notNull(),
         description: text('description').notNull().default(''),
         currentVersionNumber: integer('current_version_number').notNull().default(1),
         status: text('status', { enum: promptAssetStatuses }).notNull().default('active'),
+        createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
+        updatedBy: text('updated_by').references(() => users.id, { onDelete: 'set null' }),
         createdAt: integer('created_at').notNull(),
         updatedAt: integer('updated_at').notNull(),
         archivedAt: integer('archived_at'),
     },
     (table) => [
-        index('idx_prompt_assets_status_updated_at').on(table.status, table.updatedAt),
-        index('idx_prompt_assets_name').on(table.name),
+        index('idx_prompt_assets_workspace_status_updated_at').on(
+            table.workspaceId,
+            table.status,
+            table.updatedAt
+        ),
+        uniqueIndex('uq_prompt_assets_workspace_normalized_name').on(
+            table.workspaceId,
+            table.normalizedName
+        ),
+        index('idx_prompt_assets_workspace_name').on(table.workspaceId, table.name),
         index('idx_prompt_assets_created_at').on(table.createdAt),
         check('ck_prompt_assets_name_length', sql`length(trim(${table.name})) between 1 and 120`),
+        check(
+            'ck_prompt_assets_normalized_name_length',
+            sql`length(trim(${table.normalizedName})) between 1 and 120`
+        ),
         check('ck_prompt_assets_current_version', sql`${table.currentVersionNumber} >= 1`),
         check('ck_prompt_assets_status', sql`${table.status} in ('active', 'archived')`),
         check(
@@ -49,6 +68,9 @@ export const promptAssetVersions = sqliteTable(
         assetId: text('asset_id')
             .notNull()
             .references(() => promptAssets.id, { onDelete: 'cascade' }),
+        workspaceId: text('workspace_id')
+            .notNull()
+            .references(() => workspaces.id, { onDelete: 'cascade' }),
         versionNumber: integer('version_number').notNull(),
         nameSnapshot: text('name_snapshot').notNull(),
         descriptionSnapshot: text('description_snapshot').notNull().default(''),
@@ -60,11 +82,16 @@ export const promptAssetVersions = sqliteTable(
             (): AnySQLiteColumn => promptAssetVersions.id,
             { onDelete: 'set null' }
         ),
+        createdBy: text('created_by').references(() => users.id, { onDelete: 'set null' }),
         createdAt: integer('created_at').notNull(),
     },
     (table) => [
         uniqueIndex('uq_prompt_asset_versions_asset_version').on(table.assetId, table.versionNumber),
-        index('idx_prompt_asset_versions_asset_created_at').on(table.assetId, table.createdAt),
+        index('idx_prompt_asset_versions_workspace_asset_created_at').on(
+            table.workspaceId,
+            table.assetId,
+            table.createdAt
+        ),
         index('idx_prompt_asset_versions_source_version_id').on(table.sourceVersionId),
         index('idx_prompt_asset_versions_content_hash').on(table.contentHash),
         check('ck_prompt_asset_versions_version_number', sql`${table.versionNumber} >= 1`),

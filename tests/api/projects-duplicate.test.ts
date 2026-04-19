@@ -1,30 +1,35 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { ProjectStore } from '../../app/lib/project-store';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../../app/lib/api/errors';
 import { ProjectData } from '../../app/types';
 
-vi.mock('../../app/lib/project-store', () => ({
-    ProjectStore: {
-        getProject: vi.fn(),
-        saveProject: vi.fn(),
-    },
+const mockPrincipal = {
+    userId: 'user-1',
+    activeWorkspaceId: 'workspace-1',
+    activeWorkspaceSlug: 'workspace-1',
+    workspaceRole: 'owner',
+    permissions: ['project:write'],
+};
+
+const mockService = {
+    duplicateProject: vi.fn(),
+};
+
+vi.mock('../../app/lib/auth/principal', () => ({
+    resolvePrincipal: vi.fn().mockResolvedValue(mockPrincipal),
+    requirePermission: vi.fn(),
 }));
 
-vi.mock('../../app/lib/utils', async () => {
-    const actual = await vi.importActual<typeof import('../../app/lib/utils')>('../../app/lib/utils');
-    return {
-        ...actual,
-        generateId: vi.fn(() => 'duplicated-project-id'),
-    };
-});
+vi.mock('../../app/lib/projects/service', () => ({
+    getProjectService: () => mockService,
+}));
 
 describe('Project Duplicate API', () => {
-    const originalProject: ProjectData = {
+    const duplicatedProject: ProjectData = {
         meta: {
-            id: 'source-project',
-            name: 'Original Project',
-            createdAt: '2024-01-01T00:00:00.000Z',
-            updatedAt: '2024-01-02T00:00:00.000Z',
+            id: 'duplicated-project-id',
+            name: 'Original Project (Copy)',
+            createdAt: '2026-04-19T10:00:00.000Z',
+            updatedAt: '2026-04-19T10:00:00.000Z',
         },
         systemPrompt: 'prompt',
         messages: [],
@@ -45,62 +50,40 @@ describe('Project Duplicate API', () => {
         vi.useRealTimers();
     });
 
-    describe('POST /api/projects/[id]/duplicate', () => {
-        it('duplicates the project, rewrites meta, and persists the copy', async () => {
-            const { POST } = await import('../../app/api/projects/[id]/duplicate/route');
+    it('duplicates the project and returns its meta', async () => {
+        const { POST } = await import('../../app/api/projects/[id]/duplicate/route');
+        mockService.duplicateProject.mockReturnValue(duplicatedProject);
 
-            vi.mocked(ProjectStore.getProject).mockResolvedValue(originalProject);
-            vi.mocked(ProjectStore.saveProject).mockResolvedValue();
+        const response = await POST(
+            new Request('http://localhost/api/projects/source-project/duplicate', {
+                method: 'POST',
+                headers: { 'x-dev-user-id': 'dev-user' },
+            }),
+            { params: Promise.resolve({ id: 'source-project' }) }
+        );
+        const data = await response.json();
 
-            const response = await POST({} as Request, {
-                params: Promise.resolve({ id: 'source-project' }),
-            });
-            const data = await response.json();
+        expect(response.status).toBe(200);
+        expect(data).toEqual(duplicatedProject.meta);
+        expect(mockService.duplicateProject).toHaveBeenCalledWith(mockPrincipal, 'source-project');
+    });
 
-            expect(response.status).toBe(200);
-            expect(data).toEqual({
-                id: 'duplicated-project-id',
-                name: 'Original Project (副本)',
-                createdAt: '2026-04-19T10:00:00.000Z',
-                updatedAt: '2026-04-19T10:00:00.000Z',
-            });
-            expect(ProjectStore.getProject).toHaveBeenCalledWith('source-project');
-            expect(ProjectStore.saveProject).toHaveBeenCalledWith({
-                ...originalProject,
-                meta: {
-                    id: 'duplicated-project-id',
-                    name: 'Original Project (副本)',
-                    createdAt: '2026-04-19T10:00:00.000Z',
-                    updatedAt: '2026-04-19T10:00:00.000Z',
-                },
-            });
+    it('maps duplication failures to API errors', async () => {
+        const { POST } = await import('../../app/api/projects/[id]/duplicate/route');
+        mockService.duplicateProject.mockImplementation(() => {
+            throw new ApiError(500, 'INTERNAL_ERROR', 'Unsafe duplicate payload');
         });
 
-        it('returns 500 when the source project cannot be loaded', async () => {
-            const { POST } = await import('../../app/api/projects/[id]/duplicate/route');
+        const response = await POST(
+            new Request('http://localhost/api/projects/source-project/duplicate', {
+                method: 'POST',
+                headers: { 'x-dev-user-id': 'dev-user' },
+            }),
+            { params: Promise.resolve({ id: 'source-project' }) }
+        );
+        const data = await response.json();
 
-            vi.mocked(ProjectStore.getProject).mockRejectedValue(new Error('Project not found'));
-
-            const response = await POST({} as Request, {
-                params: Promise.resolve({ id: 'missing-project' }),
-            });
-
-            expect(response.status).toBe(500);
-            await expect(response.json()).resolves.toEqual({ error: 'Project not found' });
-        });
-
-        it('returns 500 when persistence rejects a duplicated malicious project', async () => {
-            const { POST } = await import('../../app/api/projects/[id]/duplicate/route');
-
-            vi.mocked(ProjectStore.getProject).mockResolvedValue(originalProject);
-            vi.mocked(ProjectStore.saveProject).mockRejectedValue(new Error('Unsafe duplicate payload'));
-
-            const response = await POST({} as Request, {
-                params: Promise.resolve({ id: 'source-project' }),
-            });
-
-            expect(response.status).toBe(500);
-            await expect(response.json()).resolves.toEqual({ error: 'Unsafe duplicate payload' });
-        });
+        expect(response.status).toBe(500);
+        expect(data.error.message).toBe('Unsafe duplicate payload');
     });
 });

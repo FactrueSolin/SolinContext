@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { AnchorHTMLAttributes } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PromptAssetDetail, PromptAssetSummary } from '../../app/lib/prompt-assets/dto';
+import type { ProjectData } from '../../app/types';
 import PromptAssetDrawer from '../../app/components/PromptAssetDrawer';
 import { PromptAssetApiError } from '../../app/lib/prompt-assets/client';
 
@@ -32,7 +33,7 @@ const {
         },
         mockEditor: {
             state: {
-                currentProject: null,
+                currentProject: null as ProjectData | null,
             },
             setPromptAssetNotice: vi.fn(),
             updateSystemPrompt: vi.fn(),
@@ -196,7 +197,7 @@ describe('PromptAssetDrawer', () => {
 
     it('shows an info toast instead of opening the save modal when the current prompt is empty', async () => {
         mockEditor.state.currentProject = {
-            ...mockEditor.state.currentProject,
+            ...(mockEditor.state.currentProject as ProjectData),
             systemPrompt: '   ',
         };
 

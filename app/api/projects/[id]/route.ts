@@ -1,51 +1,59 @@
-import { NextResponse } from 'next/server';
-import { ProjectStore } from '../../../lib/project-store';
-import { ProjectData } from '../../../types';
+import { z } from 'zod';
+import { apiErrorResponse, parseJsonBody } from '../../../lib/api/http';
+import { resolvePrincipal, requirePermission } from '../../../lib/auth/principal';
+import { getProjectService } from '../../../lib/projects/service';
 
-// GET /api/projects/[id] - 获取项目详情
-export async function GET(
-    request: Request,
-    { params }: { params: Promise<{ id: string }> }
-) {
+const legacyProjectSchema = z.object({
+    meta: z.object({
+        id: z.string().trim().min(1),
+        name: z.string().trim().min(1).max(120),
+        createdAt: z.string(),
+        updatedAt: z.string(),
+    }),
+    systemPrompt: z.string(),
+    messages: z.array(z.any()),
+    apiConfig: z.any(),
+});
+
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
-        const project = await ProjectStore.getProject(id);
-        return NextResponse.json(project);
+        const principal = await resolvePrincipal(request);
+        requirePermission(principal, 'project:read');
+        return Response.json(getProjectService().getLegacyProject(principal, id));
     } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: message }, { status: 404 });
+        return apiErrorResponse(request, error);
     }
 }
 
-// PUT /api/projects/[id] - 更新项目
-export async function PUT(
-    request: Request,
-    { params }: { params: Promise<{ id: string }> }
-) {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
-        const body = await request.json() as ProjectData;
-        // 确保ID一致
-        body.meta.id = id;
-        await ProjectStore.saveProject(body);
-        return NextResponse.json(body.meta);
+        const principal = await resolvePrincipal(request);
+        requirePermission(principal, 'project:write');
+        const body = await parseJsonBody(request, legacyProjectSchema);
+        const data = getProjectService().updateLegacyProject(principal, id, {
+            ...body,
+            meta: {
+                ...body.meta,
+                id,
+            },
+        });
+
+        return Response.json(data.meta);
     } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: message }, { status: 500 });
+        return apiErrorResponse(request, error);
     }
 }
 
-// DELETE /api/projects/[id] - 删除项目
-export async function DELETE(
-    request: Request,
-    { params }: { params: Promise<{ id: string }> }
-) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         const { id } = await params;
-        await ProjectStore.deleteProject(id);
-        return NextResponse.json({ success: true });
+        const principal = await resolvePrincipal(request);
+        requirePermission(principal, 'project:delete');
+        getProjectService().deleteProject(principal, id);
+        return Response.json({ success: true });
     } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        return NextResponse.json({ error: message }, { status: 500 });
+        return apiErrorResponse(request, error);
     }
 }

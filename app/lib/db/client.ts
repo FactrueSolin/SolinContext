@@ -3,7 +3,7 @@ import path from 'path';
 import BetterSqlite3 from 'better-sqlite3';
 import { drizzle, type BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import * as schema from './schema/prompt-assets';
+import * as schema from './schema';
 import { getPromptAssetDatabasePath, getPromptAssetMigrationsDir } from '../runtime-paths';
 
 export interface PromptAssetDatabaseContext {
@@ -57,3 +57,8 @@ export function resetPromptAssetDatabaseContext(): void {
         databaseContext = null;
     }
 }
+
+export type AppDatabaseContext = PromptAssetDatabaseContext;
+export const createAppDatabaseContext = createPromptAssetDatabaseContext;
+export const getAppDatabaseContext = getPromptAssetDatabaseContext;
+export const resetAppDatabaseContext = resetPromptAssetDatabaseContext;

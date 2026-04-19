@@ -37,9 +37,14 @@ import {
     type PromptAssetVersionsQuery,
     type RestorePromptAssetVersionInput,
 } from './validators';
+import type { Principal } from '../auth/principal';
 
 function hashContent(content: string): string {
     return createHash('sha256').update(content).digest('hex');
+}
+
+function normalizeName(name: string): string {
+    return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 export interface PromptAssetServiceOptions {
@@ -53,12 +58,18 @@ export class PromptAssetService {
 
     constructor(options: PromptAssetServiceOptions = {}) {
         this.database = options.database ?? getPromptAssetDatabaseContext();
-        this.repository = options.repository ?? new PromptAssetRepository(this.database.db);
+        this.repository = options.repository ?? new PromptAssetRepository(this.database.db as never);
     }
 
-    async listPromptAssets(input: ListPromptAssetsQuery): Promise<PaginatedData<PromptAssetSummary>> {
+    async listPromptAssets(
+        principal: Principal,
+        input: ListPromptAssetsQuery
+    ): Promise<PaginatedData<PromptAssetSummary>> {
         const params = this.parseWithSchema(listPromptAssetsQuerySchema, input);
-        const result = this.repository.list(params);
+        const result = this.repository.list({
+            workspaceId: principal.activeWorkspaceId,
+            ...params,
+        });
 
         return {
             items: result.items.map((item) => this.mapSummary(item)),
@@ -70,7 +81,10 @@ export class PromptAssetService {
         };
     }
 
-    async createPromptAsset(input: CreatePromptAssetInput): Promise<PromptAssetDetail> {
+    async createPromptAsset(
+        principal: Principal,
+        input: CreatePromptAssetInput
+    ): Promise<PromptAssetDetail> {
         const params = this.parseWithSchema(createPromptAssetSchema, input);
         const now = Date.now();
         const assetId = ulid();
@@ -78,10 +92,14 @@ export class PromptAssetService {
 
         const asset: PromptAssetRow = {
             id: assetId,
+            workspaceId: principal.activeWorkspaceId,
             name: params.name,
+            normalizedName: normalizeName(params.name),
             description: params.description,
             currentVersionNumber: 1,
             status: 'active',
+            createdBy: principal.userId,
+            updatedBy: principal.userId,
             createdAt: now,
             updatedAt: now,
             archivedAt: null,
@@ -90,6 +108,7 @@ export class PromptAssetService {
         const version: PromptAssetVersionRow = {
             id: versionId,
             assetId,
+            workspaceId: principal.activeWorkspaceId,
             versionNumber: 1,
             nameSnapshot: params.name,
             descriptionSnapshot: params.description,
@@ -98,6 +117,7 @@ export class PromptAssetService {
             contentHash: hashContent(params.content),
             operationType: 'create',
             sourceVersionId: null,
+            createdBy: principal.userId,
             createdAt: now,
         };
 
@@ -105,23 +125,24 @@ export class PromptAssetService {
             this.repository.createAssetWithVersion({ asset, version });
         })();
 
-        return this.getPromptAssetDetail(assetId);
+        return this.getPromptAssetDetail(principal, assetId);
     }
 
-    async getPromptAssetDetail(assetId: string): Promise<PromptAssetDetail> {
-        const asset = this.requireAsset(assetId);
-        const currentVersion = this.requireCurrentVersion(asset.id);
+    async getPromptAssetDetail(principal: Principal, assetId: string): Promise<PromptAssetDetail> {
+        const asset = this.requireAsset(principal.activeWorkspaceId, assetId);
+        const currentVersion = this.requireCurrentVersion(principal.activeWorkspaceId, asset.id);
 
         return this.mapDetail(asset, currentVersion);
     }
 
     async createPromptAssetVersion(
+        principal: Principal,
         assetId: string,
         input: CreatePromptAssetVersionInput
     ): Promise<PromptAssetDetail> {
         const params = this.parseWithSchema(createPromptAssetVersionSchema, input);
-        const asset = this.requireAsset(assetId);
-        const currentVersion = this.requireCurrentVersion(assetId);
+        const asset = this.requireAsset(principal.activeWorkspaceId, assetId);
+        const currentVersion = this.requireCurrentVersion(principal.activeWorkspaceId, assetId);
 
         if (asset.status === 'archived') {
             throw promptAssetArchived(assetId);
@@ -151,13 +172,17 @@ export class PromptAssetService {
         this.database.client.transaction(() => {
             this.repository.appendVersion({
                 assetId,
+                workspaceId: principal.activeWorkspaceId,
                 name: params.name,
+                normalizedName: normalizeName(params.name),
                 description: params.description,
                 currentVersionNumber: nextVersionNumber,
+                updatedBy: principal.userId,
                 updatedAt: now,
                 version: {
                     id: ulid(),
                     assetId,
+                    workspaceId: principal.activeWorkspaceId,
                     versionNumber: nextVersionNumber,
                     nameSnapshot: params.name,
                     descriptionSnapshot: params.description,
@@ -166,21 +191,23 @@ export class PromptAssetService {
                     contentHash: nextContentHash,
                     operationType: 'update',
                     sourceVersionId: null,
+                    createdBy: principal.userId,
                     createdAt: now,
                 },
             });
         })();
 
-        return this.getPromptAssetDetail(assetId);
+        return this.getPromptAssetDetail(principal, assetId);
     }
 
     async listPromptAssetVersions(
+        principal: Principal,
         assetId: string,
         input: PromptAssetVersionsQuery
     ): Promise<PaginatedData<PromptAssetVersionItem>> {
-        this.requireAsset(assetId);
+        this.requireAsset(principal.activeWorkspaceId, assetId);
         const params = this.parseWithSchema(promptAssetVersionsQuerySchema, input);
-        const result = this.repository.listVersions(assetId, params);
+        const result = this.repository.listVersions(principal.activeWorkspaceId, assetId, params);
 
         return {
             items: result.items.map((item) => this.mapVersion(item)),
@@ -192,9 +219,13 @@ export class PromptAssetService {
         };
     }
 
-    async getPromptAssetVersion(assetId: string, versionId: string): Promise<PromptAssetVersionItem> {
-        this.requireAsset(assetId);
-        const version = this.repository.findVersionById(assetId, versionId);
+    async getPromptAssetVersion(
+        principal: Principal,
+        assetId: string,
+        versionId: string
+    ): Promise<PromptAssetVersionItem> {
+        this.requireAsset(principal.activeWorkspaceId, assetId);
+        const version = this.repository.findVersionById(principal.activeWorkspaceId, assetId, versionId);
 
         if (!version) {
             throw promptAssetVersionNotFound(versionId);
@@ -204,11 +235,12 @@ export class PromptAssetService {
     }
 
     async restorePromptAssetVersion(
+        principal: Principal,
         assetId: string,
         input: RestorePromptAssetVersionInput
     ): Promise<PromptAssetDetail> {
         const params = this.parseWithSchema(restorePromptAssetVersionSchema, input);
-        const asset = this.requireAsset(assetId);
+        const asset = this.requireAsset(principal.activeWorkspaceId, assetId);
 
         if (asset.status === 'archived') {
             throw promptAssetArchived(assetId);
@@ -222,7 +254,11 @@ export class PromptAssetService {
             );
         }
 
-        const sourceVersion = this.repository.findVersionById(assetId, params.versionId);
+        const sourceVersion = this.repository.findVersionById(
+            principal.activeWorkspaceId,
+            assetId,
+            params.versionId
+        );
         if (!sourceVersion) {
             throw promptAssetVersionNotFound(params.versionId);
         }
@@ -233,13 +269,17 @@ export class PromptAssetService {
         this.database.client.transaction(() => {
             this.repository.appendVersion({
                 assetId,
+                workspaceId: principal.activeWorkspaceId,
                 name: sourceVersion.nameSnapshot,
+                normalizedName: normalizeName(sourceVersion.nameSnapshot),
                 description: sourceVersion.descriptionSnapshot,
                 currentVersionNumber: nextVersionNumber,
+                updatedBy: principal.userId,
                 updatedAt: now,
                 version: {
                     id: ulid(),
                     assetId,
+                    workspaceId: principal.activeWorkspaceId,
                     versionNumber: nextVersionNumber,
                     nameSnapshot: sourceVersion.nameSnapshot,
                     descriptionSnapshot: sourceVersion.descriptionSnapshot,
@@ -248,16 +288,17 @@ export class PromptAssetService {
                     contentHash: sourceVersion.contentHash,
                     operationType: 'restore',
                     sourceVersionId: sourceVersion.id,
+                    createdBy: principal.userId,
                     createdAt: now,
                 },
             });
         })();
 
-        return this.getPromptAssetDetail(assetId);
+        return this.getPromptAssetDetail(principal, assetId);
     }
 
-    async archivePromptAsset(assetId: string): Promise<PromptAssetSummary> {
-        const asset = this.requireAsset(assetId);
+    async archivePromptAsset(principal: Principal, assetId: string): Promise<PromptAssetSummary> {
+        const asset = this.requireAsset(principal.activeWorkspaceId, assetId);
 
         if (asset.status === 'archived') {
             return this.mapSummary(asset);
@@ -266,16 +307,18 @@ export class PromptAssetService {
         const now = Date.now();
         this.repository.updateArchiveStatus({
             id: assetId,
+            workspaceId: principal.activeWorkspaceId,
             status: 'archived',
             archivedAt: now,
+            updatedBy: principal.userId,
             updatedAt: now,
         });
 
-        return this.mapSummary(this.requireAsset(assetId));
+        return this.mapSummary(this.requireAsset(principal.activeWorkspaceId, assetId));
     }
 
-    async unarchivePromptAsset(assetId: string): Promise<PromptAssetSummary> {
-        const asset = this.requireAsset(assetId);
+    async unarchivePromptAsset(principal: Principal, assetId: string): Promise<PromptAssetSummary> {
+        const asset = this.requireAsset(principal.activeWorkspaceId, assetId);
 
         if (asset.status === 'active') {
             return this.mapSummary(asset);
@@ -284,15 +327,24 @@ export class PromptAssetService {
         const now = Date.now();
         this.repository.updateArchiveStatus({
             id: assetId,
+            workspaceId: principal.activeWorkspaceId,
             status: 'active',
             archivedAt: null,
+            updatedBy: principal.userId,
             updatedAt: now,
         });
 
-        return this.mapSummary(this.requireAsset(assetId));
+        return this.mapSummary(this.requireAsset(principal.activeWorkspaceId, assetId));
     }
 
-    private parseWithSchema<TInput, TOutput>(schema: { safeParse: (value: TInput) => { success: true; data: TOutput } | { success: false; error: { flatten: () => unknown } } }, value: TInput): TOutput {
+    private parseWithSchema<TInput, TOutput>(
+        schema: {
+            safeParse: (
+                value: TInput
+            ) => { success: true; data: TOutput } | { success: false; error: { flatten: () => unknown } };
+        },
+        value: TInput
+    ): TOutput {
         const result = schema.safeParse(value);
         if (!result.success) {
             throw promptAssetValidationFailed(result.error.flatten());
@@ -301,8 +353,8 @@ export class PromptAssetService {
         return result.data;
     }
 
-    private requireAsset(assetId: string): PromptAssetRow {
-        const asset = this.repository.findAssetById(assetId);
+    private requireAsset(workspaceId: string, assetId: string): PromptAssetRow {
+        const asset = this.repository.findAssetById(workspaceId, assetId);
 
         if (!asset) {
             throw promptAssetNotFound(assetId);
@@ -311,8 +363,8 @@ export class PromptAssetService {
         return asset;
     }
 
-    private requireCurrentVersion(assetId: string): PromptAssetVersionRow {
-        const version = this.repository.findCurrentVersionByAssetId(assetId);
+    private requireCurrentVersion(workspaceId: string, assetId: string): PromptAssetVersionRow {
+        const version = this.repository.findCurrentVersionByAssetId(workspaceId, assetId);
 
         if (!version) {
             throw promptAssetInternalError(`Prompt asset "${assetId}" current version is missing`);
@@ -377,10 +429,8 @@ export function getPromptAssetService(): PromptAssetService {
     return promptAssetService;
 }
 
-export function createTestPromptAssetService(): PromptAssetService {
-    const database = createPromptAssetDatabaseContext({ fileName: ':memory:' });
+export function createIsolatedPromptAssetService(): PromptAssetService {
     return new PromptAssetService({
-        database,
-        repository: new PromptAssetRepository(database.db),
+        database: createPromptAssetDatabaseContext({ fileName: ':memory:' }),
     });
 }

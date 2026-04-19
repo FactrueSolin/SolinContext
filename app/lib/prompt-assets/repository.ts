@@ -1,6 +1,6 @@
 import { and, desc, eq, like, sql } from 'drizzle-orm';
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3';
-import { promptAssets, promptAssetVersions } from '../db/schema/prompt-assets';
+import { promptAssets, promptAssetVersions } from '../db/schema';
 import type { PromptAssetOperationType, PromptAssetStatus } from './dto';
 
 type PromptAssetDatabase = BetterSQLite3Database<{
@@ -10,10 +10,14 @@ type PromptAssetDatabase = BetterSQLite3Database<{
 
 export interface PromptAssetRow {
     id: string;
+    workspaceId: string;
     name: string;
+    normalizedName: string;
     description: string;
     currentVersionNumber: number;
     status: PromptAssetStatus;
+    createdBy: string | null;
+    updatedBy: string | null;
     createdAt: number;
     updatedAt: number;
     archivedAt: number | null;
@@ -22,6 +26,7 @@ export interface PromptAssetRow {
 export interface PromptAssetVersionRow {
     id: string;
     assetId: string;
+    workspaceId: string;
     versionNumber: number;
     nameSnapshot: string;
     descriptionSnapshot: string;
@@ -30,6 +35,7 @@ export interface PromptAssetVersionRow {
     contentHash: string;
     operationType: PromptAssetOperationType;
     sourceVersionId: string | null;
+    createdBy: string | null;
     createdAt: number;
 }
 
@@ -41,6 +47,7 @@ export interface PaginatedResult<T> {
 }
 
 export interface ListPromptAssetsParams {
+    workspaceId: string;
     query?: string;
     status: PromptAssetStatus | 'all';
     page: number;
@@ -59,17 +66,22 @@ export interface CreateAssetTxInput {
 
 export interface AppendVersionTxInput {
     assetId: string;
+    workspaceId: string;
     name: string;
+    normalizedName: string;
     description: string;
     currentVersionNumber: number;
+    updatedBy: string;
     updatedAt: number;
     version: PromptAssetVersionRow;
 }
 
 export interface UpdateArchiveStatusTxInput {
     id: string;
+    workspaceId: string;
     status: PromptAssetStatus;
     archivedAt: number | null;
+    updatedBy: string;
     updatedAt: number;
 }
 
@@ -77,7 +89,7 @@ export class PromptAssetRepository {
     constructor(private readonly db: PromptAssetDatabase) {}
 
     list(params: ListPromptAssetsParams): PaginatedResult<PromptAssetRow> {
-        const conditions = [];
+        const conditions = [eq(promptAssets.workspaceId, params.workspaceId)];
         const offset = (params.page - 1) * params.pageSize;
 
         if (params.status !== 'all') {
@@ -88,136 +100,153 @@ export class PromptAssetRepository {
             conditions.push(like(promptAssets.name, `%${params.query}%`));
         }
 
-        const whereClause =
-            conditions.length === 0 ? undefined : conditions.length === 1 ? conditions[0] : and(...conditions);
+        const whereClause = and(...conditions);
 
-        const selectQuery = this.db
+        const items = this.db
             .select({
                 id: promptAssets.id,
+                workspaceId: promptAssets.workspaceId,
                 name: promptAssets.name,
+                normalizedName: promptAssets.normalizedName,
                 description: promptAssets.description,
                 currentVersionNumber: promptAssets.currentVersionNumber,
                 status: promptAssets.status,
+                createdBy: promptAssets.createdBy,
+                updatedBy: promptAssets.updatedBy,
                 createdAt: promptAssets.createdAt,
                 updatedAt: promptAssets.updatedAt,
                 archivedAt: promptAssets.archivedAt,
             })
-            .from(promptAssets);
-
-        const countQuery = this.db
-            .select({
-                total: sql<number>`count(*)`,
-            })
-            .from(promptAssets);
-
-        const items = (whereClause ? selectQuery.where(whereClause) : selectQuery)
+            .from(promptAssets)
+            .where(whereClause)
             .orderBy(desc(promptAssets.updatedAt))
             .limit(params.pageSize)
             .offset(offset)
-            .all();
+            .all()
+            .map((item) => ({ ...item, archivedAt: item.archivedAt ?? null }));
 
-        const totalRow = (whereClause ? countQuery.where(whereClause) : countQuery).get();
+        const totalRow = this.db
+            .select({
+                total: sql<number>`count(*)`,
+            })
+            .from(promptAssets)
+            .where(whereClause)
+            .get();
 
         return {
-            items: items.map((item) => ({
-                ...item,
-                archivedAt: item.archivedAt ?? null,
-            })),
+            items,
             total: Number(totalRow?.total ?? 0),
             page: params.page,
             pageSize: params.pageSize,
         };
     }
 
-    findAssetById(id: string): PromptAssetRow | null {
-        const row = this.db
-            .select({
-                id: promptAssets.id,
-                name: promptAssets.name,
-                description: promptAssets.description,
-                currentVersionNumber: promptAssets.currentVersionNumber,
-                status: promptAssets.status,
-                createdAt: promptAssets.createdAt,
-                updatedAt: promptAssets.updatedAt,
-                archivedAt: promptAssets.archivedAt,
-            })
-            .from(promptAssets)
-            .where(eq(promptAssets.id, id))
-            .get();
+    findAssetById(workspaceId: string, id: string): PromptAssetRow | null {
+        const row =
+            this.db
+                .select({
+                    id: promptAssets.id,
+                    workspaceId: promptAssets.workspaceId,
+                    name: promptAssets.name,
+                    normalizedName: promptAssets.normalizedName,
+                    description: promptAssets.description,
+                    currentVersionNumber: promptAssets.currentVersionNumber,
+                    status: promptAssets.status,
+                    createdBy: promptAssets.createdBy,
+                    updatedBy: promptAssets.updatedBy,
+                    createdAt: promptAssets.createdAt,
+                    updatedAt: promptAssets.updatedAt,
+                    archivedAt: promptAssets.archivedAt,
+                })
+                .from(promptAssets)
+                .where(and(eq(promptAssets.workspaceId, workspaceId), eq(promptAssets.id, id)))
+                .get() ?? null;
 
-        if (!row) {
-            return null;
-        }
-
-        return {
-            ...row,
-            archivedAt: row.archivedAt ?? null,
-        };
+        return row ? { ...row, archivedAt: row.archivedAt ?? null } : null;
     }
 
-    findCurrentVersionByAssetId(assetId: string): PromptAssetVersionRow | null {
-        const row = this.db
-            .select({
-                id: promptAssetVersions.id,
-                assetId: promptAssetVersions.assetId,
-                versionNumber: promptAssetVersions.versionNumber,
-                nameSnapshot: promptAssetVersions.nameSnapshot,
-                descriptionSnapshot: promptAssetVersions.descriptionSnapshot,
-                content: promptAssetVersions.content,
-                changeNote: promptAssetVersions.changeNote,
-                contentHash: promptAssetVersions.contentHash,
-                operationType: promptAssetVersions.operationType,
-                sourceVersionId: promptAssetVersions.sourceVersionId,
-                createdAt: promptAssetVersions.createdAt,
-            })
-            .from(promptAssetVersions)
-            .innerJoin(
-                promptAssets,
-                and(
-                    eq(promptAssets.id, promptAssetVersions.assetId),
-                    eq(promptAssets.currentVersionNumber, promptAssetVersions.versionNumber)
+    findCurrentVersionByAssetId(workspaceId: string, assetId: string): PromptAssetVersionRow | null {
+        return (
+            this.db
+                .select({
+                    id: promptAssetVersions.id,
+                    assetId: promptAssetVersions.assetId,
+                    workspaceId: promptAssetVersions.workspaceId,
+                    versionNumber: promptAssetVersions.versionNumber,
+                    nameSnapshot: promptAssetVersions.nameSnapshot,
+                    descriptionSnapshot: promptAssetVersions.descriptionSnapshot,
+                    content: promptAssetVersions.content,
+                    changeNote: promptAssetVersions.changeNote,
+                    contentHash: promptAssetVersions.contentHash,
+                    operationType: promptAssetVersions.operationType,
+                    sourceVersionId: promptAssetVersions.sourceVersionId,
+                    createdBy: promptAssetVersions.createdBy,
+                    createdAt: promptAssetVersions.createdAt,
+                })
+                .from(promptAssetVersions)
+                .innerJoin(
+                    promptAssets,
+                    and(
+                        eq(promptAssets.id, promptAssetVersions.assetId),
+                        eq(promptAssets.currentVersionNumber, promptAssetVersions.versionNumber)
+                    )
                 )
-            )
-            .where(eq(promptAssetVersions.assetId, assetId))
-            .get();
-
-        return row ?? null;
-    }
-
-    findVersionById(assetId: string, versionId: string): PromptAssetVersionRow | null {
-        const row = this.db
-            .select({
-                id: promptAssetVersions.id,
-                assetId: promptAssetVersions.assetId,
-                versionNumber: promptAssetVersions.versionNumber,
-                nameSnapshot: promptAssetVersions.nameSnapshot,
-                descriptionSnapshot: promptAssetVersions.descriptionSnapshot,
-                content: promptAssetVersions.content,
-                changeNote: promptAssetVersions.changeNote,
-                contentHash: promptAssetVersions.contentHash,
-                operationType: promptAssetVersions.operationType,
-                sourceVersionId: promptAssetVersions.sourceVersionId,
-                createdAt: promptAssetVersions.createdAt,
-            })
-            .from(promptAssetVersions)
-            .where(
-                and(
-                    eq(promptAssetVersions.assetId, assetId),
-                    eq(promptAssetVersions.id, versionId)
+                .where(
+                    and(
+                        eq(promptAssetVersions.workspaceId, workspaceId),
+                        eq(promptAssetVersions.assetId, assetId)
+                    )
                 )
-            )
-            .get();
-
-        return row ?? null;
+                .get() ?? null
+        );
     }
 
-    listVersions(assetId: string, params: PaginationParams): PaginatedResult<PromptAssetVersionRow> {
+    findVersionById(
+        workspaceId: string,
+        assetId: string,
+        versionId: string
+    ): PromptAssetVersionRow | null {
+        return (
+            this.db
+                .select({
+                    id: promptAssetVersions.id,
+                    assetId: promptAssetVersions.assetId,
+                    workspaceId: promptAssetVersions.workspaceId,
+                    versionNumber: promptAssetVersions.versionNumber,
+                    nameSnapshot: promptAssetVersions.nameSnapshot,
+                    descriptionSnapshot: promptAssetVersions.descriptionSnapshot,
+                    content: promptAssetVersions.content,
+                    changeNote: promptAssetVersions.changeNote,
+                    contentHash: promptAssetVersions.contentHash,
+                    operationType: promptAssetVersions.operationType,
+                    sourceVersionId: promptAssetVersions.sourceVersionId,
+                    createdBy: promptAssetVersions.createdBy,
+                    createdAt: promptAssetVersions.createdAt,
+                })
+                .from(promptAssetVersions)
+                .where(
+                    and(
+                        eq(promptAssetVersions.workspaceId, workspaceId),
+                        eq(promptAssetVersions.assetId, assetId),
+                        eq(promptAssetVersions.id, versionId)
+                    )
+                )
+                .get() ?? null
+        );
+    }
+
+    listVersions(
+        workspaceId: string,
+        assetId: string,
+        params: PaginationParams
+    ): PaginatedResult<PromptAssetVersionRow> {
         const offset = (params.page - 1) * params.pageSize;
 
         const items = this.db
             .select({
                 id: promptAssetVersions.id,
                 assetId: promptAssetVersions.assetId,
+                workspaceId: promptAssetVersions.workspaceId,
                 versionNumber: promptAssetVersions.versionNumber,
                 nameSnapshot: promptAssetVersions.nameSnapshot,
                 descriptionSnapshot: promptAssetVersions.descriptionSnapshot,
@@ -226,10 +255,13 @@ export class PromptAssetRepository {
                 contentHash: promptAssetVersions.contentHash,
                 operationType: promptAssetVersions.operationType,
                 sourceVersionId: promptAssetVersions.sourceVersionId,
+                createdBy: promptAssetVersions.createdBy,
                 createdAt: promptAssetVersions.createdAt,
             })
             .from(promptAssetVersions)
-            .where(eq(promptAssetVersions.assetId, assetId))
+            .where(
+                and(eq(promptAssetVersions.workspaceId, workspaceId), eq(promptAssetVersions.assetId, assetId))
+            )
             .orderBy(desc(promptAssetVersions.versionNumber))
             .limit(params.pageSize)
             .offset(offset)
@@ -240,7 +272,9 @@ export class PromptAssetRepository {
                 total: sql<number>`count(*)`,
             })
             .from(promptAssetVersions)
-            .where(eq(promptAssetVersions.assetId, assetId))
+            .where(
+                and(eq(promptAssetVersions.workspaceId, workspaceId), eq(promptAssetVersions.assetId, assetId))
+            )
             .get();
 
         return {
@@ -252,56 +286,75 @@ export class PromptAssetRepository {
     }
 
     createAssetWithVersion(input: CreateAssetTxInput): void {
-        this.db.insert(promptAssets).values({
-            id: input.asset.id,
-            name: input.asset.name,
-            description: input.asset.description,
-            currentVersionNumber: input.asset.currentVersionNumber,
-            status: input.asset.status,
-            createdAt: input.asset.createdAt,
-            updatedAt: input.asset.updatedAt,
-            archivedAt: input.asset.archivedAt,
-        }).run();
+        this.db
+            .insert(promptAssets)
+            .values({
+                id: input.asset.id,
+                workspaceId: input.asset.workspaceId,
+                name: input.asset.name,
+                normalizedName: input.asset.normalizedName,
+                description: input.asset.description,
+                currentVersionNumber: input.asset.currentVersionNumber,
+                status: input.asset.status,
+                createdBy: input.asset.createdBy,
+                updatedBy: input.asset.updatedBy,
+                createdAt: input.asset.createdAt,
+                updatedAt: input.asset.updatedAt,
+                archivedAt: input.asset.archivedAt,
+            })
+            .run();
 
-        this.db.insert(promptAssetVersions).values({
-            id: input.version.id,
-            assetId: input.version.assetId,
-            versionNumber: input.version.versionNumber,
-            nameSnapshot: input.version.nameSnapshot,
-            descriptionSnapshot: input.version.descriptionSnapshot,
-            content: input.version.content,
-            changeNote: input.version.changeNote,
-            contentHash: input.version.contentHash,
-            operationType: input.version.operationType,
-            sourceVersionId: input.version.sourceVersionId,
-            createdAt: input.version.createdAt,
-        }).run();
+        this.db
+            .insert(promptAssetVersions)
+            .values({
+                id: input.version.id,
+                assetId: input.version.assetId,
+                workspaceId: input.version.workspaceId,
+                versionNumber: input.version.versionNumber,
+                nameSnapshot: input.version.nameSnapshot,
+                descriptionSnapshot: input.version.descriptionSnapshot,
+                content: input.version.content,
+                changeNote: input.version.changeNote,
+                contentHash: input.version.contentHash,
+                operationType: input.version.operationType,
+                sourceVersionId: input.version.sourceVersionId,
+                createdBy: input.version.createdBy,
+                createdAt: input.version.createdAt,
+            })
+            .run();
     }
 
     appendVersion(input: AppendVersionTxInput): void {
-        this.db.insert(promptAssetVersions).values({
-            id: input.version.id,
-            assetId: input.version.assetId,
-            versionNumber: input.version.versionNumber,
-            nameSnapshot: input.version.nameSnapshot,
-            descriptionSnapshot: input.version.descriptionSnapshot,
-            content: input.version.content,
-            changeNote: input.version.changeNote,
-            contentHash: input.version.contentHash,
-            operationType: input.version.operationType,
-            sourceVersionId: input.version.sourceVersionId,
-            createdAt: input.version.createdAt,
-        }).run();
+        this.db
+            .insert(promptAssetVersions)
+            .values({
+                id: input.version.id,
+                assetId: input.version.assetId,
+                workspaceId: input.version.workspaceId,
+                versionNumber: input.version.versionNumber,
+                nameSnapshot: input.version.nameSnapshot,
+                descriptionSnapshot: input.version.descriptionSnapshot,
+                content: input.version.content,
+                changeNote: input.version.changeNote,
+                contentHash: input.version.contentHash,
+                operationType: input.version.operationType,
+                sourceVersionId: input.version.sourceVersionId,
+                createdBy: input.version.createdBy,
+                createdAt: input.version.createdAt,
+            })
+            .run();
 
         this.db
             .update(promptAssets)
             .set({
                 name: input.name,
+                normalizedName: input.normalizedName,
                 description: input.description,
                 currentVersionNumber: input.currentVersionNumber,
+                updatedBy: input.updatedBy,
                 updatedAt: input.updatedAt,
             })
-            .where(eq(promptAssets.id, input.assetId))
+            .where(and(eq(promptAssets.workspaceId, input.workspaceId), eq(promptAssets.id, input.assetId)))
             .run();
     }
 
@@ -311,9 +364,10 @@ export class PromptAssetRepository {
             .set({
                 status: input.status,
                 archivedAt: input.archivedAt,
+                updatedBy: input.updatedBy,
                 updatedAt: input.updatedAt,
             })
-            .where(eq(promptAssets.id, input.id))
+            .where(and(eq(promptAssets.workspaceId, input.workspaceId), eq(promptAssets.id, input.id)))
             .run();
     }
 }

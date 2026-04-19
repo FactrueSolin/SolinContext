@@ -1,19 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../../app/lib/api/errors';
 
-import { ProjectStore } from '../../app/lib/project-store';
+const mockPrincipal = {
+    userId: 'user-1',
+    activeWorkspaceId: 'workspace-1',
+    activeWorkspaceSlug: 'workspace-1',
+    workspaceRole: 'owner',
+    permissions: ['project:read', 'project:write', 'project:delete'],
+};
 
-vi.mock('../../app/lib/project-store', () => ({
-    ProjectStore: {
-        listProjects: vi.fn(),
-        saveProject: vi.fn(),
-    },
+const mockService = {
+    listProjects: vi.fn(),
+    createLegacyProject: vi.fn(),
+};
+
+vi.mock('../../app/lib/auth/principal', () => ({
+    resolvePrincipal: vi.fn().mockResolvedValue(mockPrincipal),
+    requirePermission: vi.fn(),
 }));
 
-function createJsonRequest(body: unknown) {
+vi.mock('../../app/lib/projects/service', () => ({
+    getProjectService: () => mockService,
+}));
+
+function createRequest(method = 'GET', body?: unknown) {
     return new Request('http://localhost/api/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        method,
+        headers: {
+            'Content-Type': 'application/json',
+            'x-dev-user-id': 'dev-user',
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
     });
 }
 
@@ -22,112 +39,99 @@ describe('Projects API', () => {
         vi.clearAllMocks();
     });
 
-    describe('GET /api/projects', () => {
-        it('returns project summaries from ProjectStore', async () => {
-            const { GET } = await import('../../app/api/projects/route');
-            const mockProjects = [
+    it('returns project summaries', async () => {
+        const { GET } = await import('../../app/api/projects/route');
+        mockService.listProjects.mockReturnValue({
+            items: [
                 { id: '1', name: 'Proj1', createdAt: '2023', updatedAt: '2023' },
-                { id: '2', name: 'Proj2', createdAt: '2023', updatedAt: '2023' },
-            ];
-
-            vi.mocked(ProjectStore.listProjects).mockResolvedValue(mockProjects);
-
-            const response = await GET();
-
-            expect(response.status).toBe(200);
-            await expect(response.json()).resolves.toEqual(mockProjects);
-            expect(ProjectStore.listProjects).toHaveBeenCalledTimes(1);
+                { id: '2', name: 'Proj2', createdAt: '2024', updatedAt: '2024' },
+            ],
         });
 
-        it('returns 500 when ProjectStore.listProjects throws', async () => {
-            const { GET } = await import('../../app/api/projects/route');
+        const response = await GET(createRequest());
 
-            vi.mocked(ProjectStore.listProjects).mockRejectedValue(new Error('List error'));
-
-            const response = await GET();
-
-            expect(response.status).toBe(500);
-            await expect(response.json()).resolves.toEqual({ error: 'List error' });
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toEqual([
+            { id: '1', name: 'Proj1', createdAt: '2023', updatedAt: '2023' },
+            { id: '2', name: 'Proj2', createdAt: '2024', updatedAt: '2024' },
+        ]);
+        expect(mockService.listProjects).toHaveBeenCalledWith(mockPrincipal, {
+            query: undefined,
+            page: 1,
+            pageSize: 100,
+            sortBy: 'updatedAt',
+            sortOrder: 'desc',
         });
     });
 
-    describe('POST /api/projects', () => {
-        it('creates a new project and persists it', async () => {
-            const { POST } = await import('../../app/api/projects/route');
-
-            vi.mocked(ProjectStore.saveProject).mockResolvedValue();
-
-            const response = await POST(createJsonRequest({ name: 'Test Project' }));
-            const data = await response.json();
-
-            expect(response.status).toBe(201);
-            expect(data.meta.name).toBe('Test Project');
-            expect(data.apiConfig).toEqual({
-                baseUrl: 'https://api.anthropic.com',
-                apiKey: '',
-                model: 'claude-sonnet-4-20250514',
-            });
-            expect(ProjectStore.saveProject).toHaveBeenCalledTimes(1);
-            expect(vi.mocked(ProjectStore.saveProject).mock.calls[0][0].meta.name).toBe('Test Project');
+    it('returns wrapped errors when listing fails', async () => {
+        const { GET } = await import('../../app/api/projects/route');
+        mockService.listProjects.mockImplementation(() => {
+            throw new Error('List error');
         });
 
-        it('uses the provided apiConfig when present', async () => {
-            const { POST } = await import('../../app/api/projects/route');
-            const customApiConfig = {
+        const response = await GET(createRequest());
+        const data = await response.json();
+
+        expect(response.status).toBe(500);
+        expect(data.error.code).toBe('INTERNAL_ERROR');
+        expect(data.error.message).toBe('List error');
+    });
+
+    it('creates a legacy project payload', async () => {
+        const { POST } = await import('../../app/api/projects/route');
+        mockService.createLegacyProject.mockReturnValue({
+            meta: {
+                id: 'project-1',
+                name: 'Test Project',
+                createdAt: '2026-04-19T00:00:00.000Z',
+                updatedAt: '2026-04-19T00:00:00.000Z',
+            },
+            systemPrompt: 'You are a helpful assistant.',
+            messages: [],
+            apiConfig: {
                 baseUrl: 'https://proxy.example.com',
                 apiKey: 'key',
                 model: 'model',
-            };
-
-            vi.mocked(ProjectStore.saveProject).mockResolvedValue();
-
-            const response = await POST(
-                createJsonRequest({
-                    name: 'Test Project',
-                    apiConfig: customApiConfig,
-                }),
-            );
-            const data = await response.json();
-
-            expect(response.status).toBe(201);
-            expect(data.apiConfig).toEqual(customApiConfig);
+            },
         });
 
-        it('returns 400 when name is missing', async () => {
-            const { POST } = await import('../../app/api/projects/route');
+        const response = await POST(
+            createRequest('POST', {
+                name: 'Test Project',
+                apiConfig: {
+                    baseUrl: 'https://proxy.example.com',
+                    apiKey: 'key',
+                    model: 'model',
+                },
+            })
+        );
+        const data = await response.json();
 
-            const response = await POST(createJsonRequest({ apiConfig: {} }));
+        expect(response.status).toBe(201);
+        expect(data.meta.name).toBe('Test Project');
+        expect(mockService.createLegacyProject).toHaveBeenCalledTimes(1);
+    });
 
-            expect(response.status).toBe(400);
-            await expect(response.json()).resolves.toEqual({ error: 'Project name is required' });
-            expect(ProjectStore.saveProject).not.toHaveBeenCalled();
+    it('returns validation errors for missing names', async () => {
+        const { POST } = await import('../../app/api/projects/route');
+        const response = await POST(createRequest('POST', { apiConfig: {} }));
+        const data = await response.json();
+
+        expect(response.status).toBe(422);
+        expect(data.error.code).toBe('VALIDATION_FAILED');
+    });
+
+    it('surfaces internal errors from project creation', async () => {
+        const { POST } = await import('../../app/api/projects/route');
+        mockService.createLegacyProject.mockImplementation(() => {
+            throw new ApiError(500, 'INTERNAL_ERROR', 'Unsafe project name');
         });
 
-        it('returns 500 when request body is invalid JSON', async () => {
-            const { POST } = await import('../../app/api/projects/route');
-            const malformedRequest = new Request('http://localhost/api/projects', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: '{"name":',
-            });
+        const response = await POST(createRequest('POST', { name: 'Test Project' }));
+        const data = await response.json();
 
-            const response = await POST(malformedRequest);
-            const data = await response.json();
-
-            expect(response.status).toBe(500);
-            expect(data.error).toContain('JSON');
-            expect(ProjectStore.saveProject).not.toHaveBeenCalled();
-        });
-
-        it('returns 500 when ProjectStore.saveProject rejects suspicious payloads', async () => {
-            const { POST } = await import('../../app/api/projects/route');
-
-            vi.mocked(ProjectStore.saveProject).mockRejectedValue(new Error('Unsafe project name'));
-
-            const response = await POST(createJsonRequest({ name: '" OR 1=1 --' }));
-
-            expect(response.status).toBe(500);
-            await expect(response.json()).resolves.toEqual({ error: 'Unsafe project name' });
-        });
+        expect(response.status).toBe(500);
+        expect(data.error.message).toBe('Unsafe project name');
     });
 });
