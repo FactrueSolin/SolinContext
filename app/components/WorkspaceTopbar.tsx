@@ -284,13 +284,15 @@ export default function WorkspaceTopbar() {
                                 </div>
                             )}
                         </div>
-                        <Link
-                            href="/sign-out"
-                            className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/80 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-white"
-                        >
-                            <LogOut size={15} />
-                            退出
-                        </Link>
+                        <form action="/sign-out" method="post">
+                            <button
+                                type="submit"
+                                className="inline-flex items-center gap-2 rounded-full border border-white/80 bg-white/80 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-white"
+                            >
+                                <LogOut size={15} />
+                                退出
+                            </button>
+                        </form>
                     </div>
                 </div>
 

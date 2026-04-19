@@ -5,6 +5,10 @@ function readEnv(name: string): string | undefined {
     return value ? value : undefined;
 }
 
+function trimTrailingSlash(value: string): string {
+    return value.replace(/\/+$/, '');
+}
+
 function getRequiredEnv(name: string): string {
     const value = readEnv(name);
 
@@ -26,11 +30,13 @@ export function isLogtoConfigured(): boolean {
 }
 
 export function getLogtoConfig(): LogtoNextConfig {
+    const baseUrl = trimTrailingSlash(getRequiredEnv('APP_BASE_URL'));
+
     return {
         endpoint: getRequiredEnv('LOGTO_ENDPOINT'),
         appId: getRequiredEnv('LOGTO_APP_ID'),
         appSecret: getRequiredEnv('LOGTO_APP_SECRET'),
-        baseUrl: getRequiredEnv('APP_BASE_URL'),
+        baseUrl,
         cookieSecret: getRequiredEnv('LOGTO_COOKIE_SECRET'),
         cookieSecure: process.env.NODE_ENV === 'production',
         scopes: (readEnv('LOGTO_SCOPES') ??
