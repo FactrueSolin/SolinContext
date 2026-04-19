@@ -214,7 +214,7 @@ export function listPromptAssetVersions(
 export function listPromptAssetVersions(
     workspaceSlug: string | null | undefined,
     assetId: string,
-    params: ListPromptAssetVersionsParams = {}
+    params?: ListPromptAssetVersionsParams
 ) : Promise<PaginatedData<PromptAssetVersionItem>>;
 export function listPromptAssetVersions(
     workspaceSlugOrAssetId: string | null | undefined,
