@@ -2,6 +2,8 @@ services:
   app:
     build:
       context: .
+    env_file:
+      - .env
     environment:
       NODE_ENV: production
       DATA_DIR: /app/data
