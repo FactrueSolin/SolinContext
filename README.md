@@ -7,7 +7,7 @@ pnpm install
 pnpm dev
 ```
 
-默认会把项目数据和提示词资产数据库写入 `./data`。
+默认会把应用数据写入 `./data`。项目与提示词资产都会存入同一个 SQLite 数据库 `app.db`。
 
 ## Docker Deployment
 
@@ -19,7 +19,7 @@ docker compose up -d --build
 
 默认会使用 Docker/BuildKit 的常规构建缓存。
 
-默认会创建一个名为 `aicontext-data` 的 Docker volume，并挂载到容器内的 `/app/data`。项目数据和 SQLite 数据库都会持久化到这个 volume 中。
+默认会创建一个名为 `aicontext-data` 的 Docker volume，并挂载到容器内的 `/app/data`。应用数据库和运行时数据都会持久化到这个 volume 中。
 
 停止服务但保留数据：
 
@@ -51,8 +51,10 @@ docker buildx build \
 
 ## Runtime Data Paths
 
-- `DATA_DIR`：项目数据目录，默认是 `/app/data`（Docker）或 `./data`（本地）。
-- `PROMPT_ASSET_DB_PATH`：提示词资产 SQLite 数据库文件路径，默认是 `${DATA_DIR}/app.db`。
+- `DATA_DIR`：运行时数据目录，默认是 `/app/data`（Docker）或 `./data`（本地）。
+- `PROMPT_ASSET_DB_PATH`：应用 SQLite 数据库文件路径，默认是 `${DATA_DIR}/app.db`。
+
+如果 `DATA_DIR` 下仍然存在旧版 `data/<projectId>/project.json` 与 `history/*.json`，服务首次访问项目数据时会自动导入到 SQLite。
 
 如果你需要把数据直接写到宿主机目录，也可以把 volume 改成 bind mount，例如：
 

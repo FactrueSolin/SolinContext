@@ -19,6 +19,7 @@ export interface ProjectRow {
     createdAt: number;
     updatedAt: number;
     deletedAt: number | null;
+    rowVersion: number;
 }
 
 export interface ProjectRevisionRow {
@@ -26,9 +27,17 @@ export interface ProjectRevisionRow {
     projectId: string;
     workspaceId: string;
     revisionNumber: number;
-    snapshotJson: string;
+    historyKey: string;
+    nameSnapshot: string;
+    systemPrompt: string;
+    messagesJson: string;
+    apiConfigJson: string;
+    contentHash: string;
+    operationType: string;
+    sourceRevisionId: string | null;
     createdBy: string | null;
     createdAt: number;
+    legacySourcePath: string | null;
 }
 
 export interface ListProjectsParams {
@@ -82,6 +91,7 @@ export class ProjectRepository {
                 createdAt: projects.createdAt,
                 updatedAt: projects.updatedAt,
                 deletedAt: projects.deletedAt,
+                rowVersion: projects.rowVersion,
             })
             .from(projects)
             .where(whereClause)
@@ -120,12 +130,24 @@ export class ProjectRepository {
                     createdAt: projects.createdAt,
                     updatedAt: projects.updatedAt,
                     deletedAt: projects.deletedAt,
+                    rowVersion: projects.rowVersion,
                 })
                 .from(projects)
                 .where(and(eq(projects.workspaceId, workspaceId), eq(projects.id, id), isNull(projects.deletedAt)))
                 .get() ?? null;
 
         return row ? { ...row, deletedAt: row.deletedAt ?? null } : null;
+    }
+
+    existsById(id: string): boolean {
+        const row =
+            this.db
+                .select({ id: projects.id })
+                .from(projects)
+                .where(eq(projects.id, id))
+                .get() ?? null;
+
+        return row !== null;
     }
 
     findRevisionById(workspaceId: string, projectId: string, revisionId: string): ProjectRevisionRow | null {
@@ -136,9 +158,17 @@ export class ProjectRepository {
                     projectId: projectRevisions.projectId,
                     workspaceId: projectRevisions.workspaceId,
                     revisionNumber: projectRevisions.revisionNumber,
-                    snapshotJson: projectRevisions.snapshotJson,
+                    historyKey: projectRevisions.historyKey,
+                    nameSnapshot: projectRevisions.nameSnapshot,
+                    systemPrompt: projectRevisions.systemPrompt,
+                    messagesJson: projectRevisions.messagesJson,
+                    apiConfigJson: projectRevisions.apiConfigJson,
+                    contentHash: projectRevisions.contentHash,
+                    operationType: projectRevisions.operationType,
+                    sourceRevisionId: projectRevisions.sourceRevisionId,
                     createdBy: projectRevisions.createdBy,
                     createdAt: projectRevisions.createdAt,
+                    legacySourcePath: projectRevisions.legacySourcePath,
                 })
                 .from(projectRevisions)
                 .where(
@@ -146,6 +176,38 @@ export class ProjectRepository {
                         eq(projectRevisions.workspaceId, workspaceId),
                         eq(projectRevisions.projectId, projectId),
                         eq(projectRevisions.id, revisionId)
+                    )
+                )
+                .get() ?? null
+        );
+    }
+
+    findRevisionByHistoryKey(workspaceId: string, projectId: string, historyKey: string): ProjectRevisionRow | null {
+        return (
+            this.db
+                .select({
+                    id: projectRevisions.id,
+                    projectId: projectRevisions.projectId,
+                    workspaceId: projectRevisions.workspaceId,
+                    revisionNumber: projectRevisions.revisionNumber,
+                    historyKey: projectRevisions.historyKey,
+                    nameSnapshot: projectRevisions.nameSnapshot,
+                    systemPrompt: projectRevisions.systemPrompt,
+                    messagesJson: projectRevisions.messagesJson,
+                    apiConfigJson: projectRevisions.apiConfigJson,
+                    contentHash: projectRevisions.contentHash,
+                    operationType: projectRevisions.operationType,
+                    sourceRevisionId: projectRevisions.sourceRevisionId,
+                    createdBy: projectRevisions.createdBy,
+                    createdAt: projectRevisions.createdAt,
+                    legacySourcePath: projectRevisions.legacySourcePath,
+                })
+                .from(projectRevisions)
+                .where(
+                    and(
+                        eq(projectRevisions.workspaceId, workspaceId),
+                        eq(projectRevisions.projectId, projectId),
+                        eq(projectRevisions.historyKey, historyKey)
                     )
                 )
                 .get() ?? null
@@ -160,9 +222,17 @@ export class ProjectRepository {
                     projectId: projectRevisions.projectId,
                     workspaceId: projectRevisions.workspaceId,
                     revisionNumber: projectRevisions.revisionNumber,
-                    snapshotJson: projectRevisions.snapshotJson,
+                    historyKey: projectRevisions.historyKey,
+                    nameSnapshot: projectRevisions.nameSnapshot,
+                    systemPrompt: projectRevisions.systemPrompt,
+                    messagesJson: projectRevisions.messagesJson,
+                    apiConfigJson: projectRevisions.apiConfigJson,
+                    contentHash: projectRevisions.contentHash,
+                    operationType: projectRevisions.operationType,
+                    sourceRevisionId: projectRevisions.sourceRevisionId,
                     createdBy: projectRevisions.createdBy,
                     createdAt: projectRevisions.createdAt,
+                    legacySourcePath: projectRevisions.legacySourcePath,
                 })
                 .from(projectRevisions)
                 .innerJoin(
@@ -184,9 +254,17 @@ export class ProjectRepository {
                 projectId: projectRevisions.projectId,
                 workspaceId: projectRevisions.workspaceId,
                 revisionNumber: projectRevisions.revisionNumber,
-                snapshotJson: projectRevisions.snapshotJson,
+                historyKey: projectRevisions.historyKey,
+                nameSnapshot: projectRevisions.nameSnapshot,
+                systemPrompt: projectRevisions.systemPrompt,
+                messagesJson: projectRevisions.messagesJson,
+                apiConfigJson: projectRevisions.apiConfigJson,
+                contentHash: projectRevisions.contentHash,
+                operationType: projectRevisions.operationType,
+                sourceRevisionId: projectRevisions.sourceRevisionId,
                 createdBy: projectRevisions.createdBy,
                 createdAt: projectRevisions.createdAt,
+                legacySourcePath: projectRevisions.legacySourcePath,
             })
             .from(projectRevisions)
             .where(and(eq(projectRevisions.workspaceId, workspaceId), eq(projectRevisions.projectId, projectId)))
@@ -194,14 +272,50 @@ export class ProjectRepository {
             .all();
     }
 
+    listHistoricalRevisions(workspaceId: string, projectId: string): ProjectRevisionRow[] {
+        return this.db
+            .select({
+                id: projectRevisions.id,
+                projectId: projectRevisions.projectId,
+                workspaceId: projectRevisions.workspaceId,
+                revisionNumber: projectRevisions.revisionNumber,
+                historyKey: projectRevisions.historyKey,
+                nameSnapshot: projectRevisions.nameSnapshot,
+                systemPrompt: projectRevisions.systemPrompt,
+                messagesJson: projectRevisions.messagesJson,
+                apiConfigJson: projectRevisions.apiConfigJson,
+                contentHash: projectRevisions.contentHash,
+                operationType: projectRevisions.operationType,
+                sourceRevisionId: projectRevisions.sourceRevisionId,
+                createdBy: projectRevisions.createdBy,
+                createdAt: projectRevisions.createdAt,
+                legacySourcePath: projectRevisions.legacySourcePath,
+            })
+            .from(projectRevisions)
+            .innerJoin(projects, eq(projects.id, projectRevisions.projectId))
+            .where(
+                and(
+                    eq(projectRevisions.workspaceId, workspaceId),
+                    eq(projectRevisions.projectId, projectId),
+                    isNull(projects.deletedAt),
+                    sql`${projectRevisions.id} <> ${projects.currentRevisionId}`
+                )
+            )
+            .orderBy(desc(projectRevisions.createdAt))
+            .all();
+    }
+
     createProjectWithRevision(input: { project: ProjectRow; revision: ProjectRevisionRow }) {
         this.db.insert(projects).values(input.project).run();
         this.db.insert(projectRevisions).values(input.revision).run();
-        this.db
-            .update(projects)
-            .set({ currentRevisionId: input.revision.id })
-            .where(eq(projects.id, input.project.id))
-            .run();
+    }
+
+    createProjectWithRevisions(input: { project: ProjectRow; revisions: ProjectRevisionRow[] }) {
+        this.db.insert(projects).values(input.project).run();
+
+        for (const revision of input.revisions) {
+            this.db.insert(projectRevisions).values(revision).run();
+        }
     }
 
     appendRevision(input: {
@@ -228,6 +342,7 @@ export class ProjectRepository {
                 currentRevisionId: input.revision.id,
                 updatedBy: input.updatedBy,
                 updatedAt: input.updatedAt,
+                rowVersion: sql`${projects.rowVersion} + 1`,
             })
             .where(and(eq(projects.workspaceId, input.workspaceId), eq(projects.id, input.projectId)))
             .run();

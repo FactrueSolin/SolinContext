@@ -3,6 +3,11 @@ import path from 'path';
 import { ProjectData, ProjectMeta, HistoryEntry } from '../types';
 import { getDataDir } from './runtime-paths';
 
+/**
+ * Legacy filesystem project store retained only for historical data import and tests.
+ * Runtime project reads/writes now go through SQLite-backed ProjectService/ProjectRepository.
+ */
+
 // 确保目录存在
 async function ensureDir(dir: string): Promise<void> {
     await fs.mkdir(dir, { recursive: true });

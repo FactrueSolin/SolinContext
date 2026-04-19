@@ -11,6 +11,16 @@ import type {
 } from './validators';
 import { projectNotFound, projectRevisionNotFound, projectVersionConflict } from './errors';
 import type { Principal } from '../auth/principal';
+import { importLegacyProjectsIntoWorkspace } from './legacy-import';
+import {
+    buildCompatHistoryKey,
+    computeProjectContentHash,
+    parseApiConfigJson,
+    parseMessagesJson,
+    serializeApiConfig,
+    serializeMessages,
+    type ProjectRevisionOperation,
+} from './revisions';
 
 export interface ProjectRevisionSummary {
     id: string;
@@ -38,6 +48,7 @@ export interface ProjectDetail extends ProjectSummary {
 }
 
 interface ProjectSnapshot {
+    name: string;
     systemPrompt: string;
     messages: EditorMessage[];
     apiConfig: ApiConfig;
@@ -47,6 +58,7 @@ interface ProjectSnapshot {
 export class ProjectService {
     private readonly database: AppDatabaseContext;
     private readonly repository: ProjectRepository;
+    private readonly importedLegacyWorkspaces = new Set<string>();
 
     constructor(options: { database?: AppDatabaseContext; repository?: ProjectRepository } = {}) {
         this.database = options.database ?? getAppDatabaseContext();
@@ -54,6 +66,7 @@ export class ProjectService {
     }
 
     listProjects(principal: Principal, input: ListProjectsQuery) {
+        this.ensureLegacyProjectsImported(principal);
         const result = this.repository.list({
             workspaceId: principal.activeWorkspaceId,
             ...input,
@@ -70,9 +83,11 @@ export class ProjectService {
     }
 
     createProject(principal: Principal, input: CreateProjectInput): ProjectDetail {
+        this.ensureLegacyProjectsImported(principal);
         return this.createProjectFromSnapshot(principal, {
             name: input.name,
             snapshot: {
+                name: input.name,
                 systemPrompt: input.systemPrompt,
                 messages: [],
                 apiConfig: createDefaultApiConfig(),
@@ -85,9 +100,11 @@ export class ProjectService {
         principal: Principal,
         input: { name: string; systemPrompt: string; messages: EditorMessage[]; apiConfig: ApiConfig }
     ): ProjectData {
+        this.ensureLegacyProjectsImported(principal);
         const detail = this.createProjectFromSnapshot(principal, {
             name: input.name,
             snapshot: {
+                name: input.name,
                 systemPrompt: input.systemPrompt,
                 messages: input.messages,
                 apiConfig: input.apiConfig,
@@ -99,9 +116,10 @@ export class ProjectService {
     }
 
     getProjectDetail(principal: Principal, projectId: string): ProjectDetail {
+        this.ensureLegacyProjectsImported(principal);
         const project = this.requireProject(principal.activeWorkspaceId, projectId);
         const revision = this.requireCurrentRevision(principal.activeWorkspaceId, projectId);
-        const snapshot = this.parseSnapshot(revision.snapshotJson);
+        const snapshot = this.parseSnapshot(revision);
 
         return this.mapDetail(project, revision, snapshot);
     }
@@ -111,6 +129,7 @@ export class ProjectService {
     }
 
     updateProject(principal: Principal, projectId: string, input: UpdateProjectInput): ProjectDetail {
+        this.ensureLegacyProjectsImported(principal);
         const currentDetail = this.getProjectDetail(principal, projectId);
 
         if (
@@ -121,6 +140,7 @@ export class ProjectService {
         }
 
         const nextSnapshot: ProjectSnapshot = {
+            name: input.name ?? currentDetail.name,
             systemPrompt: input.systemPrompt ?? currentDetail.systemPrompt,
             messages: currentDetail.messages,
             apiConfig: currentDetail.apiConfig,
@@ -137,9 +157,11 @@ export class ProjectService {
     }
 
     updateLegacyProject(principal: Principal, projectId: string, project: ProjectData): ProjectData {
+        this.ensureLegacyProjectsImported(principal);
         const detail = this.appendRevision(principal, projectId, {
             name: project.meta.name,
             snapshot: {
+                name: project.meta.name,
                 systemPrompt: project.systemPrompt,
                 messages: project.messages,
                 apiConfig: project.apiConfig,
@@ -151,6 +173,7 @@ export class ProjectService {
     }
 
     deleteProject(principal: Principal, projectId: string): void {
+        this.ensureLegacyProjectsImported(principal);
         this.requireProject(principal.activeWorkspaceId, projectId);
         this.repository.softDeleteProject(
             principal.activeWorkspaceId,
@@ -161,6 +184,7 @@ export class ProjectService {
     }
 
     listRevisions(principal: Principal, projectId: string): ProjectRevisionSummary[] {
+        this.ensureLegacyProjectsImported(principal);
         this.requireProject(principal.activeWorkspaceId, projectId);
 
         return this.repository.listRevisions(principal.activeWorkspaceId, projectId).map((revision) => ({
@@ -176,6 +200,7 @@ export class ProjectService {
         projectId: string,
         input: RestoreProjectInput
     ): ProjectDetail {
+        this.ensureLegacyProjectsImported(principal);
         const currentProject = this.requireProject(principal.activeWorkspaceId, projectId);
 
         if (
@@ -195,40 +220,57 @@ export class ProjectService {
             throw projectRevisionNotFound(input.revisionId);
         }
 
-        const snapshot = this.parseSnapshot(sourceRevision.snapshotJson);
+        const snapshot = this.parseSnapshot(sourceRevision);
 
         return this.appendRevision(principal, projectId, {
-            name: currentProject.name,
+            name: sourceRevision.nameSnapshot,
             snapshot,
+            operationType: 'restore',
+            sourceRevisionId: sourceRevision.id,
         });
     }
 
     duplicateProject(principal: Principal, projectId: string): ProjectData {
+        this.ensureLegacyProjectsImported(principal);
         const original = this.getProjectDetail(principal, projectId);
 
-        return this.createLegacyProject(principal, {
+        const detail = this.createProjectFromSnapshot(principal, {
             name: `${original.name} (Copy)`,
-            systemPrompt: original.systemPrompt,
-            messages: original.messages,
-            apiConfig: original.apiConfig,
+            snapshot: {
+                name: `${original.name} (Copy)`,
+                systemPrompt: original.systemPrompt,
+                messages: original.messages,
+                apiConfig: original.apiConfig,
+                defaultCredentialId: original.defaultCredentialId,
+            },
+            operationType: 'duplicate',
+            sourceRevisionId: original.currentRevisionId,
         });
+
+        return this.mapLegacyProject(detail);
     }
 
     getRevisionByCompatFilename(principal: Principal, projectId: string, filename: string): ProjectData {
-        const revisionId = filename.replace(/\.json$/i, '');
-        const revision = this.repository.findRevisionById(principal.activeWorkspaceId, projectId, revisionId);
+        this.ensureLegacyProjectsImported(principal);
+        const revision =
+            this.repository.findRevisionByHistoryKey(principal.activeWorkspaceId, projectId, filename) ??
+            this.repository.findRevisionById(
+                principal.activeWorkspaceId,
+                projectId,
+                filename.replace(/\.json$/i, '')
+            );
 
         if (!revision) {
-            throw projectRevisionNotFound(revisionId);
+            throw projectRevisionNotFound(filename.replace(/\.json$/i, ''));
         }
 
         const project = this.requireProject(principal.activeWorkspaceId, projectId);
-        const snapshot = this.parseSnapshot(revision.snapshotJson);
+        const snapshot = this.parseSnapshot(revision);
 
         return {
             meta: {
                 id: project.id,
-                name: project.name,
+                name: revision.nameSnapshot,
                 createdAt: new Date(project.createdAt).toISOString(),
                 updatedAt: new Date(revision.createdAt).toISOString(),
             },
@@ -239,15 +281,23 @@ export class ProjectService {
     }
 
     listCompatHistory(principal: Principal, projectId: string) {
-        return this.listRevisions(principal, projectId).map((revision) => ({
-            filename: `${revision.id}.json`,
-            timestamp: revision.createdAt,
+        this.ensureLegacyProjectsImported(principal);
+        this.requireProject(principal.activeWorkspaceId, projectId);
+
+        return this.repository.listHistoricalRevisions(principal.activeWorkspaceId, projectId).map((revision) => ({
+            filename: revision.historyKey,
+            timestamp: new Date(revision.createdAt).toISOString(),
         }));
     }
 
     private createProjectFromSnapshot(
         principal: Principal,
-        input: { name: string; snapshot: ProjectSnapshot }
+        input: {
+            name: string;
+            snapshot: ProjectSnapshot;
+            operationType?: ProjectRevisionOperation;
+            sourceRevisionId?: string | null;
+        }
     ): ProjectDetail {
         const now = Date.now();
         const projectId = ulid();
@@ -264,15 +314,29 @@ export class ProjectService {
             createdAt: now,
             updatedAt: now,
             deletedAt: null,
+            rowVersion: 1,
         };
         const revision: ProjectRevisionRow = {
             id: revisionId,
             projectId,
             workspaceId: principal.activeWorkspaceId,
             revisionNumber: 1,
-            snapshotJson: JSON.stringify(input.snapshot),
+            historyKey: buildCompatHistoryKey(revisionId),
+            nameSnapshot: input.name,
+            systemPrompt: input.snapshot.systemPrompt,
+            messagesJson: serializeMessages(input.snapshot.messages),
+            apiConfigJson: serializeApiConfig(input.snapshot.apiConfig),
+            contentHash: computeProjectContentHash({
+                name: input.name,
+                systemPrompt: input.snapshot.systemPrompt,
+                messages: input.snapshot.messages,
+                apiConfig: input.snapshot.apiConfig,
+            }),
+            operationType: input.operationType ?? 'create',
+            sourceRevisionId: input.sourceRevisionId ?? null,
             createdBy: principal.userId,
             createdAt: now,
+            legacySourcePath: null,
         };
 
         this.database.client.transaction(() => {
@@ -285,19 +349,38 @@ export class ProjectService {
     private appendRevision(
         principal: Principal,
         projectId: string,
-        input: { name: string; snapshot: ProjectSnapshot }
+        input: {
+            name: string;
+            snapshot: ProjectSnapshot;
+            operationType?: ProjectRevisionOperation;
+            sourceRevisionId?: string | null;
+        }
     ): ProjectDetail {
         const project = this.requireProject(principal.activeWorkspaceId, projectId);
         const currentRevision = this.requireCurrentRevision(principal.activeWorkspaceId, projectId);
         const now = Date.now();
+        const revisionId = ulid();
         const revision: ProjectRevisionRow = {
-            id: ulid(),
+            id: revisionId,
             projectId,
             workspaceId: principal.activeWorkspaceId,
             revisionNumber: currentRevision.revisionNumber + 1,
-            snapshotJson: JSON.stringify(input.snapshot),
+            historyKey: buildCompatHistoryKey(revisionId),
+            nameSnapshot: input.name,
+            systemPrompt: input.snapshot.systemPrompt,
+            messagesJson: serializeMessages(input.snapshot.messages),
+            apiConfigJson: serializeApiConfig(input.snapshot.apiConfig),
+            contentHash: computeProjectContentHash({
+                name: input.name,
+                systemPrompt: input.snapshot.systemPrompt,
+                messages: input.snapshot.messages,
+                apiConfig: input.snapshot.apiConfig,
+            }),
+            operationType: input.operationType ?? 'update',
+            sourceRevisionId: input.sourceRevisionId ?? currentRevision.id,
             createdBy: principal.userId,
             createdAt: now,
+            legacySourcePath: null,
         };
 
         this.database.client.transaction(() => {
@@ -321,6 +404,7 @@ export class ProjectService {
             currentRevisionId: revision.id,
             updatedBy: principal.userId,
             updatedAt: now,
+            rowVersion: project.rowVersion + 1,
         };
 
         return this.mapDetail(updatedProject, revision, input.snapshot);
@@ -344,14 +428,28 @@ export class ProjectService {
         return revision;
     }
 
-    private parseSnapshot(snapshotJson: string): ProjectSnapshot {
-        const parsed = JSON.parse(snapshotJson) as Partial<ProjectSnapshot>;
+    private parseSnapshot(revision: ProjectRevisionRow): ProjectSnapshot {
+        let messages: EditorMessage[];
+        let apiConfig: ApiConfig;
+
+        try {
+            messages = parseMessagesJson(revision.messagesJson);
+        } catch {
+            messages = [];
+        }
+
+        try {
+            apiConfig = parseApiConfigJson(revision.apiConfigJson);
+        } catch {
+            apiConfig = createDefaultApiConfig();
+        }
 
         return {
-            systemPrompt: parsed.systemPrompt ?? 'You are a helpful assistant.',
-            messages: parsed.messages ?? [],
-            apiConfig: parsed.apiConfig ?? createDefaultApiConfig(),
-            defaultCredentialId: parsed.defaultCredentialId ?? null,
+            name: revision.nameSnapshot,
+            systemPrompt: revision.systemPrompt || 'You are a helpful assistant.',
+            messages,
+            apiConfig,
+            defaultCredentialId: null,
         };
     }
 
@@ -394,6 +492,19 @@ export class ProjectService {
             messages: project.messages,
             apiConfig: project.apiConfig,
         };
+    }
+
+    private ensureLegacyProjectsImported(principal: Principal): void {
+        if (this.importedLegacyWorkspaces.has(principal.activeWorkspaceId)) {
+            return;
+        }
+
+        importLegacyProjectsIntoWorkspace({
+            principal,
+            database: this.database,
+            repository: this.repository,
+        });
+        this.importedLegacyWorkspaces.add(principal.activeWorkspaceId);
     }
 }
 
