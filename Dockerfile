@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
 
-FROM node:20-bookworm-slim AS base
+FROM node:20-bookworm-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS base
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -30,7 +30,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     --mount=type=cache,id=next-cache,target=/app/.next/cache \
     pnpm build
 
-FROM node:20-bookworm-slim AS runner
+FROM node:20-bookworm-slim@sha256:f93745c153377ee2fbbdd6e24efcd03cd2e86d6ab1d8aa9916a3790c40313a55 AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -46,15 +46,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 RUN addgroup --system nodejs && adduser --system --ingroup nodejs nextjs
 
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=deps /app/node_modules ./node_modules
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# standalone output already bundles the traced runtime dependencies we need.
+COPY --link --chown=nextjs:nodejs --from=builder /app/.next/standalone ./
+COPY --link --chown=nextjs:nodejs --from=builder /app/public ./public
+COPY --link --chown=nextjs:nodejs --from=builder /app/.next/static ./.next/static
+COPY --link docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
-    && mkdir -p /app/data \
-    && chown -R nextjs:nodejs /app
+    && install -d -o nextjs -g nodejs /app/data
 
 VOLUME ["/app/data"]
 
