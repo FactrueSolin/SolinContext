@@ -160,25 +160,41 @@ function Modal({
     children: React.ReactNode;
     onClose: () => void;
 }) {
+    useEffect(() => {
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+
+        return () => {
+            document.body.style.overflow = previousOverflow;
+        };
+    }, []);
+
     return (
-        <div className="absolute inset-0 z-20 flex items-end justify-center bg-slate-950/28 p-3 backdrop-blur-[2px] sm:items-center sm:p-6">
-            <div className="w-full max-w-xl overflow-hidden rounded-[28px] border border-white/60 bg-[var(--card-bg)] shadow-2xl shadow-slate-900/20">
-                <div className="flex items-start justify-between border-b border-[var(--border)] px-5 py-4">
-                    <div>
-                        <h3 className="text-lg font-semibold text-[var(--foreground)]">{title}</h3>
-                        {description && (
-                            <p className="mt-1 text-sm text-[var(--muted-foreground)]">{description}</p>
-                        )}
+        <div
+            className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/28 p-3 backdrop-blur-[2px] sm:p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
+        >
+            <div className="flex min-h-full items-end justify-center sm:items-center">
+                <div className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-xl flex-col overflow-hidden rounded-[28px] border border-white/60 bg-[var(--card-bg)] shadow-2xl shadow-slate-900/20 sm:max-h-[calc(100dvh-3rem)]">
+                    <div className="flex shrink-0 items-start justify-between border-b border-[var(--border)] px-5 py-4">
+                        <div>
+                            <h3 className="text-lg font-semibold text-[var(--foreground)]">{title}</h3>
+                            {description && (
+                                <p className="mt-1 text-sm text-[var(--muted-foreground)]">{description}</p>
+                            )}
+                        </div>
+                        <button
+                            onClick={onClose}
+                            className="rounded-full p-2 text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                            aria-label="关闭弹窗"
+                        >
+                            <X size={16} />
+                        </button>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="rounded-full p-2 text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-                        aria-label="关闭弹窗"
-                    >
-                        <X size={16} />
-                    </button>
+                    <div className="overflow-y-auto">{children}</div>
                 </div>
-                {children}
             </div>
         </div>
     );
