@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>降低 AIGC UI 设计稿</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">AIGC Rewrite UI Draft</p>
+          <h1>降低 AIGC 页面设计稿</h1>
+          <p class="hero-text">
+            设计方向聚焦“先提供你的真实改写样本，再按你的表达习惯改写目标文本”。
+            页面减少模型术语，强化样本质量反馈、流式结果可读性和二次迭代效率。
+          </p>
+        </div>
+
+        <div class="hero-meta">
+          <div class="meta-card">
+            <span class="meta-label">定位</span>
+            <strong>工作区独立功能页</strong>
+            <p>从项目编辑页剥离，保持单任务心智。</p>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">布局</span>
+            <strong>左录入 / 右结果</strong>
+            <p>桌面端结果区首屏可见，移动端改为单列。</p>
+          </div>
+          <div class="meta-card">
+            <span class="meta-label">风格</span>
+            <strong>学术纸感 + 编辑台</strong>
+            <p>偏克制的学院化视觉，避免通用 AI 工具感。</p>
+          </div>
+        </div>
+      </header>
+
+      <main class="content">
+        <section class="panel panel-wide">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Desktop Concept</p>
+              <h2>桌面端页面设计</h2>
+            </div>
+            <div class="state-pills">
+              <span class="pill pill-muted">样本仅保存在当前浏览器</span>
+              <span class="pill pill-highlight">已保存 1 组样本</span>
+            </div>
+          </div>
+
+          <div class="desktop-frame">
+            <section class="app-bar card">
+              <div>
+                <p class="app-title">降低 AIGC</p>
+                <p class="app-subtitle">
+                  先提供一组你自己的改写样本，再让系统按这个写法改写新文本
+                </p>
+              </div>
+              <div class="app-status">
+                <span class="status-chip">当前样本：可用于改写</span>
+                <span class="status-caption">最近保存于 10:24</span>
+              </div>
+            </section>
+
+            <section class="guide-strip card">
+              <div class="guide-steps">
+                <article>
+                  <span>1</span>
+                  <h3>粘贴一段原文</h3>
+                  <p>选择你真实修改过的片段，长度尽量完整。</p>
+                </article>
+                <article>
+                  <span>2</span>
+                  <h3>粘贴你自己的改写</h3>
+                  <p>前后需要有真实差异，不只是替换个别词。</p>
+                </article>
+                <article>
+                  <span>3</span>
+                  <h3>输入新文本开始改写</h3>
+                  <p>结果将按你的表达习惯流式生成，可继续迭代。</p>
+                </article>
+              </div>
+              <aside class="guide-aside">
+                <p class="guide-title">样本填写建议</p>
+                <ul>
+                  <li>优先选自己亲手改过的一段正文</li>
+                  <li>避免只给 1 到 2 句话</li>
+                  <li>保留原意，但体现你自己的句式习惯</li>
+                </ul>
+              </aside>
+            </section>
+
+            <div class="workspace-grid">
+              <div class="left-column">
+                <section class="card work-card">
+                  <div class="step-head">
+                    <div>
+                      <p class="step-index">步骤 1</p>
+                      <h3>样本标定区</h3>
+                    </div>
+                    <span class="quality-badge quality-warning">可保存，但建议优化</span>
+                  </div>
+
+                  <div class="editor-split">
+                    <label class="editor-field">
+                      <span>改写前文本</span>
+                      <div class="mock-textarea">
+                        为了进一步提升课堂互动效率，教师应根据学生差异化需求调整教学节奏，并在关键知识点处设置阶段性反馈……
+                      </div>
+                    </label>
+                    <label class="editor-field">
+                      <span>改写后文本</span>
+                      <div class="mock-textarea emphasis">
+                        想让课堂互动更有效，老师不能一直按一个固定节奏往下讲。碰到重点内容时，最好及时停下来看看学生有没有真正跟上……
+                      </div>
+                    </label>
+                  </div>
+
+                  <div class="quality-panel">
+                    <div class="quality-row">
+                      <strong>样本状态</strong>
+                      <span>当前样本改写差异较小，生成结果可能仍偏 AI 腔</span>
+                    </div>
+                    <div class="quality-tags">
+                      <span>长度合格</span>
+                      <span>有改写痕迹</span>
+                      <span class="weak">建议增加句式变化</span>
+                    </div>
+                  </div>
+
+                  <div class="summary-card">
+                    <div>
+                      <p class="summary-title">已保存样本摘要</p>
+                      <p class="summary-meta">632 字 · 最近保存 10:24 · 建议补充更多差异</p>
+                    </div>
+                    <div class="button-row">
+                      <button type="button" class="button ghost">清空样本</button>
+                      <button type="button" class="button">保存样本</button>
+                    </div>
+                  </div>
+                </section>
+
+                <section class="card work-card">
+                  <div class="step-head">
+                    <div>
+                      <p class="step-index">步骤 2</p>
+                      <h3>待改写区</h3>
+                    </div>
+                    <span class="quality-badge quality-ready">已满足生成条件</span>
+                  </div>
+
+                  <label class="editor-field single">
+                    <span>待改写文本</span>
+                    <div class="mock-textarea tall">
+                      传统教学评价往往更关注考试结果，而忽略了学生在学习过程中的参与度和主动性。为了改善这一问题，学校应建立更加多元的评价体系……
+                    </div>
+                  </label>
+
+                  <div class="target-toolbar">
+                    <div class="inline-note">
+                      <span class="note-dot"></span>
+                      已检测到可用样本，生成时将自动启用 thinking 与流式返回
+                    </div>
+                    <div class="button-row">
+                      <button type="button" class="button ghost">清空</button>
+                      <button type="button" class="button subtle">停止生成</button>
+                      <button type="button" class="button strong">开始改写</button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <aside class="card result-card">
+                <div class="result-head">
+                  <div>
+                    <p class="step-index">步骤 3</p>
+                    <h3>结果区</h3>
+                  </div>
+                  <span class="result-status">正在生成</span>
+                </div>
+
+                <div class="result-body">
+                  <div class="result-toolbar">
+                    <span class="streaming-pill">Streaming</span>
+                    <span class="result-meta">本轮重新生成 · 00:18</span>
+                  </div>
+                  <div class="result-text">
+                    以前学校在评价学生的时候，往往把成绩看得太重，结果就是学生平时有没有认真参与、有没有主动思考，反而没那么容易被看到。要是想把这个问题改过来，学校其实不能只盯着最后那张试卷，而是要把课堂讨论、阶段任务、平时表达这些内容一起放进评价里。这样做虽然会麻烦一点，但更能看出学生真实的学习状态，也能让他们在平时就更愿意投入进去。
+                  </div>
+
+                  <div class="thinking-card">
+                    <div class="thinking-head">
+                      <strong>Thinking</strong>
+                      <span>默认折叠，避免干扰正文阅读</span>
+                    </div>
+                    <p>
+                      正在根据样本调整句长、口语化程度和过渡语气，保留原文论点，不额外解释处理过程。
+                    </p>
+                  </div>
+
+                  <div class="result-actions">
+                    <button type="button" class="button strong">复制结果</button>
+                    <button type="button" class="button ghost">替换待改写区</button>
+                    <button type="button" class="button subtle">保留结果并再次生成</button>
+                  </div>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel split-panel">
+          <article class="panel card">
+            <div class="section-head slim">
+              <div>
+                <p class="section-kicker">Key States</p>
+                <h2>关键交互状态</h2>
+              </div>
+            </div>
+            <div class="state-list">
+              <div class="state-item">
+                <span class="mini-pill muted">空状态</span>
+                <p>首次进入时先展示玩法说明，结果区提示“结果将在这里实时出现”。</p>
+              </div>
+              <div class="state-item">
+                <span class="mini-pill warning">样本告警</span>
+                <p>软提示不阻塞保存，但明确指出“差异过小”或“长度过短”的影响。</p>
+              </div>
+              <div class="state-item">
+                <span class="mini-pill active">生成中</span>
+                <p>实时追加正文，停止入口常驻，thinking 折叠避免内容高度失控。</p>
+              </div>
+              <div class="state-item">
+                <span class="mini-pill success">已完成</span>
+                <p>结果保留，支持复制、替换、再次生成，符合高频迭代心智。</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel card">
+            <div class="section-head slim">
+              <div>
+                <p class="section-kicker">Mobile Concept</p>
+                <h2>移动端草图</h2>
+              </div>
+            </div>
+            <div class="mobile-frame">
+              <div class="mobile-screen">
+                <div class="mobile-top">
+                  <p>降低 AIGC</p>
+                  <span>样本已保存</span>
+                </div>
+                <div class="mobile-card soft">
+                  <strong>首次填写建议</strong>
+                  <p>优先给一段你亲自改过的正文，别只给一句话。</p>
+                </div>
+                <div class="mobile-card">
+                  <p class="mobile-step">步骤 1 · 样本标定</p>
+                  <div class="mobile-box"></div>
+                  <div class="mobile-box accent"></div>
+                  <div class="mobile-inline">
+                    <span class="mini-pill warning">建议优化</span>
+                    <span>样本差异偏小</span>
+                  </div>
+                </div>
+                <div class="mobile-card">
+                  <p class="mobile-step">步骤 2 · 待改写区</p>
+                  <div class="mobile-box tall"></div>
+                  <button type="button" class="button strong mobile-button">开始改写</button>
+                </div>
+                <div class="mobile-card result">
+                  <p class="mobile-step">步骤 3 · 结果区</p>
+                  <div class="mobile-result-line long"></div>
+                  <div class="mobile-result-line"></div>
+                  <div class="mobile-result-line mid"></div>
+                  <div class="mobile-thinking">Thinking 默认收起</div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section class="panel notes-panel">
+          <div class="section-head slim">
+            <div>
+              <p class="section-kicker">Design Notes</p>
+              <h2>设计决策摘要</h2>
+            </div>
+          </div>
+          <div class="notes-grid">
+            <article class="note-card">
+              <h3>降低“AI 工具感”</h3>
+              <p>采用纸张、批注、编辑台语义，弱化通用聊天产品气质，让用户更容易理解这是“仿写工作台”。</p>
+            </article>
+            <article class="note-card">
+              <h3>质量反馈前置</h3>
+              <p>把样本可用性放进步骤 1 当场反馈，而不是等生成失败后再让用户回头找问题。</p>
+            </article>
+            <article class="note-card">
+              <h3>结果区更强存在感</h3>
+              <p>桌面端右栏固定结果，保证流式输出和再次生成操作在同一视线区域完成。</p>
+            </article>
+            <article class="note-card">
+              <h3>移动端只保留主流程</h3>
+              <p>在小屏下去掉复杂并排结构，按 1-2-3 顺序串起来，减少输入和阅读冲突。</p>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>
