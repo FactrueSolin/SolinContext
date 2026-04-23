@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
+import { ApiError } from '../../app/lib/api/errors';
 import { resetAigcRewriteServiceStateForTests } from '../../app/lib/aigc-rewrite/service';
 
 const mockPrincipal = {
@@ -37,6 +38,27 @@ function createRequest(body: unknown, headers: HeadersInit = {}) {
     });
 }
 
+function createInvalidJsonRequest(body: string, headers: HeadersInit = {}) {
+    return new Request('http://localhost/api/workspaces/ai-team/aigc-rewrite/generate', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
+            'x-request-id': 'req-test-1',
+            ...headers,
+        },
+        body,
+    });
+}
+
+function createValidBody() {
+    return {
+        sampleBefore: 'before',
+        sampleAfter: 'after',
+        targetText: 'content',
+    };
+}
+
 function createSseStream(chunks: string[]) {
     const encoder = new TextEncoder();
 
@@ -48,6 +70,36 @@ function createSseStream(chunks: string[]) {
             controller.close();
         },
     });
+}
+
+function createControlledSseStream() {
+    const encoder = new TextEncoder();
+    let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+
+    const stream = new ReadableStream<Uint8Array>({
+        start(nextController) {
+            controller = nextController;
+        },
+    });
+
+    return {
+        stream,
+        push(chunk: string) {
+            if (!controller) {
+                throw new Error('SSE stream controller is not ready');
+            }
+
+            controller.enqueue(encoder.encode(chunk));
+        },
+        close() {
+            if (!controller) {
+                throw new Error('SSE stream controller is not ready');
+            }
+
+            controller.close();
+            controller = null;
+        },
+    };
 }
 
 describe('Workspace AIGC Rewrite API', () => {
@@ -199,6 +251,105 @@ describe('Workspace AIGC Rewrite API', () => {
         expect(mockFetch).not.toHaveBeenCalled();
     });
 
+    it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate returns 400 for malformed JSON bodies', async () => {
+        const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route');
+
+        const response = await POST(
+            createInvalidJsonRequest('{"sampleBefore":"before","sampleAfter":"after"'),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(400);
+        expect(data.error).toEqual({
+            code: 'BAD_REQUEST',
+            message: 'Invalid JSON request body',
+            details: null,
+            requestId: 'req-test-1',
+        });
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate rejects injected runtime fields', async () => {
+        const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route');
+
+        const response = await POST(
+            createRequest({
+                ...createValidBody(),
+                apiKey: 'sk-malicious',
+                baseUrl: 'https://evil.example.com',
+                model: 'override-model',
+                thinkingBudget: 1,
+            }),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(422);
+        expect(data.error.code).toBe('AIGC_REWRITE_VALIDATION_FAILED');
+        expect(data.error.message).toBe('Request body is invalid');
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate rejects blank target text after trim', async () => {
+        const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route');
+
+        const response = await POST(
+            createRequest({
+                ...createValidBody(),
+                targetText: '   ',
+            }),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(422);
+        expect(data.error.code).toBe('AIGC_REWRITE_VALIDATION_FAILED');
+        expect(data.error.details.targetText).toBeDefined();
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate returns 403 when credential:use permission is missing', async () => {
+        const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route');
+        mockRequirePermission.mockImplementation(() => {
+            throw new ApiError(403, 'PERMISSION_DENIED', 'Missing credential:use permission');
+        });
+
+        const response = await POST(
+            createRequest(createValidBody()),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(403);
+        expect(data.error).toEqual({
+            code: 'PERMISSION_DENIED',
+            message: 'Missing credential:use permission',
+            details: null,
+            requestId: 'req-test-1',
+        });
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate returns 403 when the workspace is archived', async () => {
+        const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route');
+        mockResolvePrincipal.mockResolvedValue({
+            ...mockPrincipal,
+            activeWorkspaceStatus: 'archived',
+        });
+
+        const response = await POST(
+            createRequest(createValidBody()),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(403);
+        expect(data.error.code).toBe('WORKSPACE_FORBIDDEN');
+        expect(data.error.message).toBe('The workspace is archived and cannot use AIGC rewrite');
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate returns 500 when feature is disabled', async () => {
         const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route');
         process.env.AIGC_REWRITE_ENABLED = 'false';
@@ -215,6 +366,27 @@ describe('Workspace AIGC Rewrite API', () => {
 
         expect(response.status).toBe(500);
         expect(data.error.code).toBe('AIGC_REWRITE_DISABLED');
+        expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate returns 500 when runtime config is incomplete', async () => {
+        const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route');
+        delete process.env.AIGC_REWRITE_BASE_URL;
+        delete process.env.AIGC_REWRITE_API_KEY;
+        delete process.env.AIGC_REWRITE_MODEL;
+        delete process.env.AI_BASE_URL;
+        delete process.env.AI_API_KEY;
+        delete process.env.AI_MODEL;
+
+        const response = await POST(
+            createRequest(createValidBody()),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+        const data = await response.json();
+
+        expect(response.status).toBe(500);
+        expect(data.error.code).toBe('AIGC_REWRITE_CONFIG_MISSING');
+        expect(data.error.message).toBe('AIGC rewrite configuration is incomplete');
         expect(mockFetch).not.toHaveBeenCalled();
     });
 
@@ -250,6 +422,67 @@ describe('Workspace AIGC Rewrite API', () => {
         expect(fetchBody.model).toBe('claude-3-5-sonnet-20241022');
     });
 
+    it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate returns 429 after exceeding the request window limit', async () => {
+        const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route');
+        process.env.AIGC_REWRITE_RATE_LIMIT_MAX_REQUESTS = '1';
+
+        mockFetch.mockResolvedValue({
+            ok: true,
+            body: createSseStream([
+                'event: message_stop\n',
+                'data: {"type":"message_stop"}\n\n',
+            ]),
+        });
+
+        const firstResponse = await POST(
+            createRequest(createValidBody()),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+        await firstResponse.text();
+
+        const secondResponse = await POST(
+            createRequest(createValidBody(), { 'x-request-id': 'req-test-2' }),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+        const data = await secondResponse.json();
+
+        expect(secondResponse.status).toBe(429);
+        expect(data.error.code).toBe('AIGC_REWRITE_RATE_LIMITED');
+        expect(data.error.message).toBe('Too many requests');
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate returns 429 when another rewrite is still running', async () => {
+        const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route');
+        const pendingUpstream = createControlledSseStream();
+
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            body: pendingUpstream.stream,
+        });
+
+        const firstResponse = await POST(
+            createRequest(createValidBody()),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+
+        const secondResponse = await POST(
+            createRequest(createValidBody(), { 'x-request-id': 'req-test-2' }),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+        const data = await secondResponse.json();
+
+        expect(firstResponse.status).toBe(200);
+        expect(secondResponse.status).toBe(429);
+        expect(data.error.code).toBe('AIGC_REWRITE_RATE_LIMITED');
+        expect(data.error.message).toBe('Too many concurrent requests');
+
+        pendingUpstream.push('event: message_stop\n');
+        pendingUpstream.push('data: {"type":"message_stop"}\n\n');
+        pendingUpstream.close();
+        await firstResponse.text();
+    });
+
     it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate converts upstream failures to a stable error envelope', async () => {
         const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route');
 
@@ -272,5 +505,32 @@ describe('Workspace AIGC Rewrite API', () => {
         expect(response.status).toBe(502);
         expect(data.error.code).toBe('AIGC_REWRITE_UPSTREAM_ERROR');
         expect(data.error.message).toBe('Model request failed');
+    });
+
+    it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate maps upstream stream errors into SSE error events', async () => {
+        const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route');
+
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            body: createSseStream([
+                'event: content_block_delta\n',
+                'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"部分结果"}}\n\n',
+                'event: error\n',
+                'data: {"type":"error","error":{"type":"overloaded_error","message":"retry later"}}\n\n',
+            ]),
+        });
+
+        const response = await POST(
+            createRequest(createValidBody()),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+        const text = await response.text();
+
+        expect(response.status).toBe(200);
+        expect(text).toContain('event: delta');
+        expect(text).toContain('"channel":"output","text":"部分结果"');
+        expect(text).toContain('event: error');
+        expect(text).toContain('"code":"AIGC_REWRITE_UPSTREAM_ERROR"');
+        expect(text).not.toContain('event: done');
     });
 });
