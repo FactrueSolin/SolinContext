@@ -265,24 +265,32 @@ aicontext:aigc-rewrite:{workspaceSlug}
 - 采集并校验样本文本
 - 将样本保存在浏览器本地
 - 采集待改写文本
-- 调用业务接口开始流式生成
-- 实时展示结果与 thinking
+- 调用工作区业务接口开始流式生成
+- 解析统一 SSE 事件并实时展示 `result` 与 `thinking`
 - 提供复制、停止、重试等交互
 
 前端不负责：
 
 - 管理模型地址
 - 管理 API Key
+- 决定实际使用的供应商与模型
 - 直接请求第三方模型供应商
 
 ## 7.2 后端职责
 
-- 从 `.env` 读取模型配置
-- 校验请求体
-- 构造 `systemPrompt` 和 `messages`
-- 强制启用 `stream` 和 `thinking`
-- 复用现有生成逻辑发起模型请求
-- 将流式结果透传给前端
+- 解析登录态、工作区和权限
+- 校验请求体并执行长度与内容约束
+- 解析平台级 AIGC 配置或工作区凭证映射
+- 构造 `systemPrompt` 和标准 `messages`
+- 强制启用 `stream` 与 `thinking`
+- 复用共享 AI 生成模块发起模型请求
+- 将上游供应商事件转换为统一 SSE 协议
+- 记录 `requestId`、workspace、provider、耗时与错误码
+
+结论：
+
+- “降低 AIGC”是工作区页面，因此后端接口也必须落在工作区路由下
+- 即使首期仍使用平台统一 `.env`，也不能绕开工作区鉴权、限流和日志归属
 
 ## 8. 接口架构设计
 
@@ -291,10 +299,40 @@ aicontext:aigc-rewrite:{workspaceSlug}
 新增业务接口：
 
 ```text
-POST /api/aigc-rewrite/generate
+POST /api/workspaces/:workspaceSlug/aigc-rewrite/generate
 ```
 
-请求体建议为：
+采用该路径，而不是 `/api/aigc-rewrite/generate`，原因如下：
+
+- 与仓库既定“工作区资源显式入路径”规范保持一致
+- 日志、限流、审计和权限判断都能天然带上工作区上下文
+- 后续若引入工作区级凭证、配额或模板共享，无需再迁移接口
+
+## 8.2 鉴权与权限要求
+
+服务端固定执行以下校验步骤：
+
+1. 从 Session 解析当前用户
+2. 根据 `workspaceSlug` 解析当前工作区
+3. 校验当前用户属于该工作区
+4. 校验当前用户具备 `credential:use` 权限
+5. 校验当前工作区未被归档或禁用
+6. 再进入样本校验和模型调用
+
+权限建议：
+
+- `owner`、`admin`、`editor`：允许调用
+- `viewer`：默认禁止调用，返回 `403 PERMISSION_DENIED`
+
+## 8.3 请求规范
+
+请求头：
+
+- `Content-Type: application/json`
+- `Accept: text/event-stream`
+- `X-Request-Id: <uuid>` 可选，不传则服务端生成
+
+请求体：
 
 ```ts
 interface AigcRewriteGenerateRequest {
@@ -304,31 +342,123 @@ interface AigcRewriteGenerateRequest {
 }
 ```
 
+字段约束：
+
+- `sampleBefore`：必填，去首尾空白后长度 `1-12000`
+- `sampleAfter`：必填，去首尾空白后长度 `1-12000`
+- `targetText`：必填，去首尾空白后长度 `1-20000`
+- `sampleBefore !== sampleAfter`
+- 禁止前端传入 `apiKey`、`baseUrl`、`model`、`thinkingBudget` 等底层模型字段
+- 禁止接受未声明字段，避免前端绕过服务端策略
+
+推荐校验模型：
+
+```ts
+interface AigcRewriteValidatedInput {
+  sampleBefore: string;
+  sampleAfter: string;
+  targetText: string;
+}
+```
+
 说明：
 
-- 请求体只保留业务字段
-- 不允许前端传 `apiKey`
-- 不允许前端传 `baseUrl`
-- 不允许前端传 `model`
+- 所有文本在进入 service 前完成 `trim`
+- 校验错误统一返回 `422 AIGC_REWRITE_VALIDATION_FAILED`
+- 不使用 `any`
 
-## 8.2 服务端处理流程
+## 8.4 成功响应规范
+
+该接口是流式命令接口，成功响应类型固定为：
+
+```text
+Content-Type: text/event-stream
+```
+
+前端只依赖平台统一 SSE 事件，不直接解析第三方供应商原始协议。
+
+推荐事件定义：
+
+```text
+event: meta
+data: {"requestId":"req_123","workspaceSlug":"demo","model":"claude-sonnet-4","provider":"anthropic"}
+
+event: delta
+data: {"channel":"thinking","text":"..."}
+
+event: delta
+data: {"channel":"output","text":"..."}
+
+event: done
+data: {"stopReason":"end_turn","usage":{"inputTokens":123,"outputTokens":456}}
+```
+
+约束：
+
+- `meta` 只发送一次
+- `delta.channel` 仅允许 `thinking` 或 `output`
+- `done` 表示正常结束，并附带最终 `usage`
+- 若流式阶段失败，发送 `event: error`
+
+流式错误事件示例：
+
+```text
+event: error
+data: {"code":"AIGC_REWRITE_UPSTREAM_ERROR","message":"Model request failed","requestId":"req_123","retryable":true}
+```
+
+## 8.5 非流式失败响应规范
+
+若错误发生在流开始之前，统一返回 JSON 错误包：
+
+```json
+{
+  "error": {
+    "code": "AIGC_REWRITE_VALIDATION_FAILED",
+    "message": "Request body is invalid",
+    "details": {
+      "targetText": ["Target text is required"]
+    },
+    "requestId": "req_123"
+  }
+}
+```
+
+推荐错误码：
+
+| HTTP Status | code | 场景 |
+| --- | --- | --- |
+| `401` | `UNAUTHENTICATED` | 未登录或 session 失效 |
+| `403` | `WORKSPACE_FORBIDDEN` | 当前用户不属于该工作区 |
+| `403` | `PERMISSION_DENIED` | 无 `credential:use` 权限 |
+| `404` | `WORKSPACE_NOT_FOUND` | 工作区不存在 |
+| `422` | `AIGC_REWRITE_VALIDATION_FAILED` | 样本或目标文本不合法 |
+| `429` | `AIGC_REWRITE_RATE_LIMITED` | 触发频率或并发限制 |
+| `500` | `AIGC_REWRITE_DISABLED` | 功能被关闭 |
+| `500` | `AIGC_REWRITE_CONFIG_MISSING` | 缺少运行时配置 |
+| `502` | `AIGC_REWRITE_UPSTREAM_ERROR` | 第三方模型调用失败 |
+
+## 8.6 服务端处理流程
 
 推荐流程：
 
-1. 校验 `sampleBefore`、`sampleAfter`、`targetText`
-2. 从 env 读取模型配置
-3. 组装 `systemPrompt`
-4. 构造单轮 `messages`
-5. 生成内部 `GenerateRequest`
-6. 调用现有生成能力并返回 SSE
+1. `Route Handler` 解析 `workspaceSlug`、请求头和 JSON 请求体
+2. `Validator` 完成字段裁剪、长度限制和结构校验
+3. `Service` 解析当前工作区、成员关系与权限
+4. `Service` 解析运行时配置、限流与超时参数
+5. `Service` 组装 `systemPrompt` 与单轮 `messages`
+6. `AI Adapter` 生成内部 `GenerateRequest`
+7. `Provider Client` 调用模型供应商
+8. `Stream Mapper` 将上游事件转换为统一 SSE 事件
+9. `Route Handler` 将事件流回传前端
 
 内部转换后的 `GenerateRequest` 应等价于：
 
 ```ts
 const request: GenerateRequest = {
-  baseUrl: env.baseUrl,
-  apiKey: env.apiKey,
-  model: env.model,
+  baseUrl: runtime.baseUrl,
+  apiKey: runtime.apiKey,
+  model: runtime.model,
   systemPrompt,
   messages: [
     {
@@ -343,11 +473,11 @@ const request: GenerateRequest = {
   ],
   stream: true,
   thinking: true,
-  thinkingBudget: env.thinkingBudget,
+  thinkingBudget: runtime.thinkingBudget,
 };
 ```
 
-### 8.3 “复用前端自动逻辑”的具体含义
+### 8.7 “复用自动逻辑”的具体含义
 
 本功能中“自动”应理解为：
 
@@ -356,67 +486,145 @@ const request: GenerateRequest = {
 - `topK` 不传
 - `maxTokens` 不传
 
-这样可以继续复用现有 `/api/generate` 中的默认推断逻辑，而不是在新页面重新发明一组参数面板。
+这样可以继续复用共享生成模块中的默认推断逻辑，而不是在新页面重新发明一组参数面板。
 
 也就是说：
 
 - 必开：`stream = true`
 - 必开：`thinking = true`
-- 可配置但建议走 env：`thinkingBudget`
-- 其他高级参数默认留空，交给现有逻辑处理
+- 可配置但只允许服务端配置：`thinkingBudget`
+- 其他高级参数默认留空，交给共享 AI 模块处理
 
-## 8.4 复用实现建议
+## 9. 后端技术规范
 
-当前 `app/api/generate/route.ts` 已经包含：
+### 9.1 技术选型结论
 
-- `buildAnthropicRequestBody`
-- 流式处理逻辑
-- 非流式处理逻辑
+首期建议沿用当前单体 BFF 技术栈：
 
-为保证可维护性，建议把这些能力抽到共享服务模块，例如：
+- 接口形态：`Next.js Route Handlers`
+- 语言：`TypeScript`
+- 请求校验：`zod`
+- 鉴权与工作区解析：复用现有 `app/lib/auth/*`
+- AI 供应商调用：抽取到共享 `app/lib/ai/*`
+- 测试：`vitest`
+
+原因：
+
+- 该功能是现有工作区产品的一部分，不值得单独拆服务
+- 它强依赖 Session、工作区、权限和统一错误结构
+- 首期不落库，真正复杂度在鉴权、流式协议和可维护性，而不在数据层
+
+### 9.2 推荐分层
+
+建议最小目录结构如下：
 
 ```text
+app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route.ts
+app/lib/aigc-rewrite/validators.ts
+app/lib/aigc-rewrite/service.ts
+app/lib/aigc-rewrite/prompt.ts
 app/lib/ai/generate.ts
+app/lib/ai/providers/anthropic.ts
+app/lib/ai/stream-events.ts
 ```
 
-然后：
+职责约束：
 
-- `/api/generate` 继续服务现有编辑器
-- `/api/aigc-rewrite/generate` 负责业务适配后调用共享模块
+- `route.ts`
+  - 只负责认证入口、参数解析、调用 service、返回 HTTP/SSE
+- `validators.ts`
+  - 只负责请求校验和字段归一化
+- `service.ts`
+  - 负责权限、限流、运行时配置选择、提示词拼装、调用 AI 模块
+- `prompt.ts`
+  - 负责构造系统提示词模板，避免模板字符串散落在 route 中
+- `app/lib/ai/*`
+  - 负责供应商适配、请求构建、SSE 映射和超时控制
 
-不建议：
+禁止：
 
 - 在新接口里直接 `fetch('/api/generate')`
 - 复制一份 `/api/generate` 代码
+- 在 `Route Handler` 里直接写供应商协议拼装逻辑
 
-原因是这两种方式都会加重后续维护成本。
+### 9.3 供应商适配策略
 
-## 9. 后端环境变量设计
+首期技术策略：
 
-建议新增以下 env：
+- 先只支持一个 Anthropic 兼容供应商
+- 对外暴露统一领域事件，不把 Anthropic SSE 事件直接暴露给页面
+- 供应商差异封装在 `app/lib/ai/providers/*`
+
+二期演进策略：
+
+- 若后续接入 OpenAI 兼容或其他模型供应商，只新增 provider adapter
+- `aigc-rewrite/service.ts` 不感知供应商字段差异
+- 页面协议保持不变
+
+### 9.4 并发、超时与限流
+
+后端必须补充以下保护：
+
+- 单请求超时控制，超时后终止上游连接
+- 以 `workspaceId + userId` 为维度的频率限制
+- 同一用户同一工作区的并发生成限制
+- 上游断流后主动关闭本地流
+
+推荐运行策略：
+
+- 默认超时通过 env 配置，不硬编码在页面
+- 限流命中返回 `429 AIGC_REWRITE_RATE_LIMITED`
+- 用户主动中止时不记为服务端错误
+
+## 10. 运行时配置与凭证策略
+
+### 10.1 首期配置来源
+
+首期继续采用平台统一配置，但配置只存在后端：
 
 ```text
+AIGC_REWRITE_ENABLED=true
+AIGC_REWRITE_PROVIDER=anthropic
 AIGC_REWRITE_BASE_URL=
 AIGC_REWRITE_API_KEY=
 AIGC_REWRITE_MODEL=
 AIGC_REWRITE_THINKING_BUDGET=10000
+AIGC_REWRITE_REQUEST_TIMEOUT_MS=120000
 ```
 
 说明：
 
-- 这些变量与主编辑器里的用户自定义 API 配置隔离
-- 页面始终使用平台统一配置
-- 首期不允许用户切模型
+- 前端页面不允许切模型
+- 前端页面不允许覆盖 `thinkingBudget`
+- 不读取 `Project.apiConfig`
+- 不接受前端透传 `apiKey`
 
-可选扩展：
+### 10.2 与工作区凭证架构的关系
 
-```text
-AIGC_REWRITE_ENABLED=true
-```
+该功能虽然首期读取平台级 `.env`，但架构上仍需与工作区凭证体系兼容。
 
-用于在不同部署环境下快速开关该功能。
+明确约束：
 
-## 10. 页面交互时序
+- 当前 `.env` 只是“默认执行凭证来源”，不是长期数据模型
+- 后续若 `credential_profiles` 落地，应优先支持“工作区绑定的系统凭证”
+- 页面与前端协议不因为凭证来源切换而改变
+
+推荐演进顺序：
+
+1. `Phase 1`：平台统一 `.env`
+2. `Phase 2`：支持工作区级 `credential_profile`
+3. `Phase 3`：支持配额、调用统计和工作区级模型策略
+
+### 10.3 不允许的配置来源
+
+以下来源明确禁止：
+
+- 前端表单传入的 `apiKey`
+- `Project` 中的 `apiConfig.apiKey`
+- 浏览器本地持久化的模型凭证
+- URL query 中的任何供应商配置
+
+## 11. 页面交互时序
 
 ```text
 用户录入样本
@@ -424,72 +632,105 @@ AIGC_REWRITE_ENABLED=true
   -> 写入 localStorage
 
 用户输入待改写文本并点击开始
-  -> 前端 POST /api/aigc-rewrite/generate
-  -> 服务端读取 env
+  -> 前端 POST /api/workspaces/:workspaceSlug/aigc-rewrite/generate
+  -> 服务端解析 session / workspace / permission
+  -> 服务端读取 runtime config
   -> 服务端拼装 systemPrompt + user message
-  -> 服务端调用共享生成模块
-  -> 第三方模型流式返回
-  -> 服务端透传 SSE
+  -> 服务端调用共享 AI 模块
+  -> Provider 返回原始流
+  -> 服务端映射为统一 SSE 事件
   -> 前端实时更新 result/thinking
 ```
 
-## 11. 异常与边界处理
+## 12. 异常、边界与可观测性
 
-### 11.1 前端校验
+### 12.1 前端校验
 
 - 样本前文本为空时禁止保存
 - 样本后文本为空时禁止保存
 - 样本前后完全相同时提示用户重新确认
 - 待改写文本为空时禁止提交
 
-### 11.2 服务端校验
+### 12.2 服务端校验
 
-- 缺少 env 时返回 `500`，错误码建议为 `AIGC_REWRITE_CONFIG_MISSING`
-- 请求字段非法时返回 `422`
-- 第三方模型失败时返回 `502`
+- 缺少运行时配置时返回 `500 AIGC_REWRITE_CONFIG_MISSING`
+- 功能被关闭时返回 `500 AIGC_REWRITE_DISABLED`
+- 请求字段非法时返回 `422 AIGC_REWRITE_VALIDATION_FAILED`
+- 第三方模型失败时返回 `502 AIGC_REWRITE_UPSTREAM_ERROR`
+- 频率限制触发时返回 `429 AIGC_REWRITE_RATE_LIMITED`
 
-### 11.3 流式中断
+### 12.3 流式中断
 
-页面应支持：
+页面与服务端都应支持：
 
 - 用户主动停止
 - 网络中断后保留当前已生成片段
 - 点击重试后重新发起完整请求
+- 服务端在连接断开后及时取消上游请求
 
-## 12. 安全与合规
+### 12.4 日志与指标
+
+服务端至少记录以下结构化字段：
+
+- `request_id`
+- `user_id`
+- `workspace_id`
+- `workspace_slug`
+- `route`
+- `provider`
+- `model`
+- `status_code`
+- `latency_ms`
+- `input_chars`
+- `output_chars`
+
+禁止日志内容：
+
+- 完整 `sampleBefore`
+- 完整 `sampleAfter`
+- 完整 `targetText`
+- 完整模型返回文本
+- 明文 `apiKey`
+
+## 13. 安全与合规
 
 - 前端永远不返回 API Key
-- 服务端日志禁止打印完整样本文本和完整模型响应
-- 若需要埋点，只记录长度、状态码、耗时等元信息
+- 流式错误信息禁止暴露上游供应商的原始堆栈
+- 供应商请求失败时只返回可观测的稳定错误码
+- 如需后续埋点，应优先记录长度、计数、耗时等元信息
 
-## 13. 首期范围与后续演进
+## 14. 首期范围与后续演进
 
-## 13.1 首期必须实现
+### 14.1 首期必须实现
 
 - 独立页面
 - 单组样本录入
 - 前端本地保存
+- 工作区显式路由
+- 统一 SSE 协议
 - 流式改写
 - thinking 展示
-- 后端 env 配置
-- 复用现有生成链路
+- 后端平台级配置
+- 复用共享 AI 生成链路
 
-## 13.2 首期不做
+### 14.2 首期不做
 
 - 多样本库
 - 样本服务端落库
 - 样本分享
 - 批量改写
 - 与 `Project` 历史版本联动
+- 用户自定义模型面板
 
-## 13.3 二期可扩展方向
+### 14.3 二期可扩展方向
 
 - 多组样本切换
 - 样本模板导入导出
 - 改写结果 diff 对比
 - 与项目正文编辑器联动
 - 样本按工作区共享
+- 接入工作区级 `credential_profile`
 
-## 14. 最终设计结论
+## 15. 最终设计结论
 
-“降低 AIGC”功能应落为工作区下的独立页面，通过“样本标定区 + 待改写区 + 结果区”完成完整闭环。样本数据首期保存在前端 `localStorage`，不进入主项目模型。AI 凭证和模型配置统一放在后端 `.env`，新页面新增一个业务接口负责拼装提示词，再复用现有 `/api/generate` 的流式与 thinking 能力。这样既满足当前需求，也能控制实现复杂度，并保持仓库的可维护性。
+“降低 AIGC”功能应落为工作区下的独立页面，通过“样本标定区 + 待改写区 + 结果区”完成闭环。后端接口必须采用 `/api/workspaces/:workspaceSlug/aigc-rewrite/generate`，统一承担鉴权、权限、运行时配置、提示词拼装、SSE 映射和可观测性职责。首期允许继续使用后端 `.env` 作为平台统一执行凭证，但这一选择不能破坏多工作区架构边界；后续凭证来源可以演进到 `credential_profiles`，而页面协议和 API 契约保持稳定。这样既满足当前需求，也能控制实现复杂度，并保持仓库的可维护性。

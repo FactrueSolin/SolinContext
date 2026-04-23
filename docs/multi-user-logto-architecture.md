@@ -652,6 +652,7 @@ Browser
   - `/api/workspaces/:workspaceSlug/prompt-assets`
   - `/api/workspaces/:workspaceSlug/credentials`
   - `/api/workspaces/:workspaceSlug/members`
+  - `/api/workspaces/:workspaceSlug/aigc-rewrite/generate`
 
 原因：
 
@@ -683,7 +684,7 @@ Browser
 
 ### 12.3 成功响应结构
 
-所有成功响应统一为：
+除流式接口外，所有成功响应统一为：
 
 ```json
 {
@@ -716,6 +717,12 @@ Browser
   }
 }
 ```
+
+流式接口例外说明：
+
+- 如 AI 生成、导出流等场景需要 `text/event-stream`，允许不使用 `{"data": ...}` 包裹
+- 但事件体仍应使用平台稳定字段，例如 `requestId`、`code`、`message`
+- 新增流式接口仍必须遵守工作区显式路由、鉴权和错误码规范
 
 ### 12.4 失败响应结构
 
@@ -762,6 +769,7 @@ Browser
 - `CREDENTIAL_*`
 - `WORKSPACE_*`
 - `MEMBER_*`
+- `AIGC_REWRITE_*`
 
 例如：
 
@@ -769,6 +777,7 @@ Browser
 - `PROMPT_ASSET_VERSION_CONFLICT`
 - `CREDENTIAL_SECRET_REQUIRED`
 - `WORKSPACE_SLUG_TAKEN`
+- `AIGC_REWRITE_CONFIG_MISSING`
 
 ### 12.6 分页、排序、过滤规范
 
