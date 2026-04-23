@@ -150,6 +150,22 @@ function getPhaseBadgeClass(phase: 'idle' | 'streaming' | 'succeeded' | 'stopped
     return 'border-slate-200 bg-slate-50 text-slate-700';
 }
 
+function getThinkingPreview(thinkingText: string): string {
+    const normalized = thinkingText.trim();
+
+    if (!normalized) {
+        return '';
+    }
+
+    const lines = normalized
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+    const lastLine = lines.at(-1) ?? normalized;
+
+    return lastLine.length > 72 ? `${lastLine.slice(0, 72)}...` : lastLine;
+}
+
 function readMessageFromError(error: unknown): string {
     if (error instanceof AigcRewriteClientError) {
         return error.message;
@@ -184,8 +200,11 @@ export default function AigcRewriteWorkspace() {
     const canSubmit = Boolean(savedSample && draft.targetText.trim() && draft.generationPhase !== 'streaming');
     const hasVisibleResult = displayResultText.trim().length > 0;
     const hasVisibleThinking = displayThinkingText.trim().length > 0;
+    const hasLiveThinking = draft.thinkingText.trim().length > 0;
+    const hasLiveOutput = draft.resultText.trim().length > 0;
     const sampleCharCount = savedSample ? countAigcRewriteSampleChars(savedSample) : 0;
     const primaryActionLabel = hasVisibleResult ? '再次生成' : '开始改写';
+    const thinkingPreview = getThinkingPreview(draft.thinkingText);
 
     useEffect(() => {
         if (!workspaceSlug) {
@@ -806,6 +825,27 @@ export default function AigcRewriteWorkspace() {
                     )}
 
                     <div className="mt-5 rounded-[24px] border border-slate-200 bg-white/85 p-4 shadow-inner shadow-slate-200/35">
+                        {draft.generationPhase === 'streaming' && (
+                            <div className="mb-4 rounded-[20px] border border-cyan-200 bg-[linear-gradient(135deg,rgba(236,254,255,0.96),rgba(239,246,255,0.94))] p-4">
+                                <div className="flex items-center gap-2 text-sm font-semibold text-cyan-900">
+                                    <BrainCircuit size={16} />
+                                    {hasLiveThinking ? '模型正在思考并生成中' : '模型已开始思考，请稍候'}
+                                    <span className="inline-flex items-center gap-1">
+                                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-500" />
+                                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-500 [animation-delay:180ms]" />
+                                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-500 [animation-delay:360ms]" />
+                                    </span>
+                                </div>
+                                <p className="mt-2 text-sm leading-6 text-cyan-900/80">
+                                    {hasLiveThinking
+                                        ? hasLiveOutput
+                                            ? `thinking 持续更新中：${thinkingPreview}`
+                                            : `正文尚未开始输出，最新 thinking：${thinkingPreview}`
+                                        : '服务正在处理样本和目标文本，thinking 返回后会立即显示在这里。'}
+                                </p>
+                            </div>
+                        )}
+
                         {hasVisibleResult ? (
                             <div className="space-y-4">
                                 <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
@@ -817,6 +857,11 @@ export default function AigcRewriteWorkspace() {
                                     {draft.generationPhase === 'streaming' && (
                                         <span className="rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 font-medium text-cyan-700">
                                             正在生成
+                                        </span>
+                                    )}
+                                    {draft.generationPhase === 'streaming' && hasLiveThinking && (
+                                        <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 font-medium text-sky-700">
+                                            thinking 更新中
                                         </span>
                                     )}
                                 </div>
@@ -882,7 +927,13 @@ export default function AigcRewriteWorkspace() {
                         >
                             <span className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
                                 <BrainCircuit size={16} />
-                                {hasVisibleThinking ? '展开 thinking' : 'thinking 暂无内容'}
+                                {hasVisibleThinking
+                                    ? draft.generationPhase === 'streaming'
+                                        ? 'thinking 正在更新'
+                                        : '展开 thinking'
+                                    : draft.generationPhase === 'streaming'
+                                      ? 'thinking 已开启，等待返回'
+                                      : 'thinking 暂无内容'}
                             </span>
                             <ChevronDown
                                 size={18}
