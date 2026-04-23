@@ -36,23 +36,24 @@ import {
 
 const guideItems = [
     {
-        title: '1. 粘贴一段原文',
-        description: '优先选择你确实亲自修改过的一段课程论文或作业正文。',
+        title: '1. 先选未修改的原文',
+        description: '优先选择一章或一段尚未修改过的正文，尽量在 1000 字以上，样本越完整越容易学到你的表达习惯。',
     },
     {
-        title: '2. 粘贴你改过后的版本',
-        description: '不要只替换几个词，尽量保留你自己的句式、衔接和段落节奏。',
+        title: '2. 先自己改写这段内容',
+        description: '先不用系统，自己把这段原文用自己的语言重新修改一遍，尽量体现你真实的句式、衔接和表达节奏。',
     },
     {
-        title: '3. 输入新文本开始改写',
-        description: '系统会模仿你的改写习惯生成新版本，帮助降低 AI 痕迹。',
+        title: '3. 再把原文、改文和目标文本输入系统',
+        description: '先录入原文和你修改后的版本作为样本，再粘贴需要改写的新内容，系统会按这个习惯继续改写。',
     },
 ];
 
 const sampleTips = [
-    '尽量选择你亲自改过的一段内容。',
-    '长度不要过短，避免只有 1 到 2 句话。',
-    '样本前后需要有真实改写差异，不只是替换个别词。',
+    '先选择一段未修改的正文，最好是一章或一段，尽量在 1000 字以上。',
+    '先自己把这段内容改写一遍，再把原文和改写后的内容输入系统。',
+    '样本前后需要有真实改写差异，不要只替换几个词。',
+    '最后再粘贴需要改写的新文本，让 AI 按你的写法继续处理。',
 ];
 
 function formatDateTime(value: string | null): string {
@@ -500,7 +501,7 @@ export default function AigcRewriteWorkspace() {
                             降低 AIGC
                         </h1>
                         <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 sm:text-base">
-                            先提供一组你自己的改写样本，再让系统按这个写法改写新文本。
+                            先选一段未修改的原文并自行改写，再把原文、改文和目标文本输入系统，让 AI 按你的习惯继续改写。
                         </p>
                     </div>
 
@@ -524,7 +525,7 @@ export default function AigcRewriteWorkspace() {
                     <div>
                         <div className="text-sm font-semibold text-slate-900">首次使用引导</div>
                         <p className="mt-1 text-sm text-slate-600">
-                            先理解样本规则，再开始改写会更稳定。
+                            先按正确顺序准备样本，再开始改写会更稳定。
                         </p>
                     </div>
                     <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600">
