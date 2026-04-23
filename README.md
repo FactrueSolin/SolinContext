@@ -27,6 +27,18 @@ AI_MODEL=claude-sonnet-4-20250514
 AI_MODEL_LABEL=Claude Sonnet 4
 ```
 
+“降低 AIGC”页面默认也会复用这组后端模型配置；如果你需要单独指定它的模型或超时，再额外配置：
+
+```bash
+AIGC_REWRITE_ENABLED=true
+AIGC_REWRITE_PROVIDER=anthropic
+AIGC_REWRITE_BASE_URL=https://api.anthropic.com
+AIGC_REWRITE_API_KEY=sk-ant-xxxx
+AIGC_REWRITE_MODEL=claude-sonnet-4-20250514
+AIGC_REWRITE_THINKING_BUDGET=10000
+AIGC_REWRITE_REQUEST_TIMEOUT_MS=120000
+```
+
 如果要启用 A/B 对比，再额外配置可选的对比模型环境变量：
 
 ```bash

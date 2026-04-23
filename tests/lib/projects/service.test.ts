@@ -22,6 +22,7 @@ const principal: Principal = {
     activeWorkspaceSlug: 'workspace-1',
     activeWorkspaceName: 'Workspace 1',
     activeWorkspaceType: 'personal',
+    activeWorkspaceStatus: 'active',
     workspaceRole: 'owner',
     permissions: [
         'project:read',

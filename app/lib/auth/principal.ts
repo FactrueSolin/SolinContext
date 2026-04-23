@@ -13,6 +13,7 @@ export interface Principal {
     activeWorkspaceSlug: string;
     activeWorkspaceName: string;
     activeWorkspaceType: 'personal' | 'organization';
+    activeWorkspaceStatus: 'active' | 'archived';
     workspaceRole: WorkspaceRole;
     permissions: WorkspacePermission[];
 }
@@ -84,6 +85,7 @@ export async function resolvePrincipal(
         activeWorkspaceSlug: membership.workspaceSlug,
         activeWorkspaceName: membership.workspaceName,
         activeWorkspaceType: membership.workspaceType,
+        activeWorkspaceStatus: membership.workspaceStatus,
         workspaceRole: membership.workspaceRole,
         permissions: getPermissionsForRole(membership.workspaceRole),
     };
@@ -133,6 +135,7 @@ export async function getCurrentUserSummary(
             slug: principal.activeWorkspaceSlug,
             name: principal.activeWorkspaceName,
             type: principal.activeWorkspaceType,
+            status: principal.activeWorkspaceStatus,
             role: principal.workspaceRole,
         },
         permissions: principal.permissions,
@@ -141,6 +144,7 @@ export async function getCurrentUserSummary(
             slug: principal.activeWorkspaceSlug,
             name: principal.activeWorkspaceName,
             type: principal.activeWorkspaceType,
+            status: principal.activeWorkspaceStatus,
             role: principal.workspaceRole,
         },
     };
