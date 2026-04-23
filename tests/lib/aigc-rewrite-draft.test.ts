@@ -45,6 +45,9 @@ describe('AIGC rewrite draft helpers', () => {
         const draft = normalizeAigcRewriteDraft({
             sampleBefore: '原文',
             sampleAfter: '改文',
+            selectedPresetId: 'academic-physics-paper',
+            selectedPresetName: '学术论文综述风格',
+            selectedPresetDescription: 'desc',
             targetText: '目标',
             resultText: '结果',
             thinkingText: '思考',
@@ -56,6 +59,8 @@ describe('AIGC rewrite draft helpers', () => {
         });
 
         expect(draft.generationPhase).toBe('idle');
+        expect(draft.selectedPresetId).toBe('academic-physics-paper');
+        expect(draft.selectedPresetName).toBe('学术论文综述风格');
         expect(draft.sampleSavedAt).toBe('2026-04-23T12:00:00.000Z');
         expect(getSavedAigcRewriteSample(draft)).toEqual({
             before: '原文',

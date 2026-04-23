@@ -1,7 +1,15 @@
 export interface AigcRewriteGeneratePayload {
-    sampleBefore: string;
-    sampleAfter: string;
+    sampleBefore?: string;
+    sampleAfter?: string;
+    presetId?: string;
     targetText: string;
+}
+
+export interface AigcRewritePresetSummary {
+    id: string;
+    name: string;
+    description: string;
+    recommendedUsage: string;
 }
 
 export interface AigcRewriteApiErrorBody {
@@ -130,6 +138,24 @@ export async function requestAigcRewriteStream(
         payloadError?.error?.details ?? null,
         payloadError?.error?.requestId ?? null
     );
+}
+
+export async function listAigcRewritePresets(workspaceSlug: string): Promise<AigcRewritePresetSummary[]> {
+    const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/aigc-rewrite/presets`);
+    const body = await parseJsonSafely(response);
+    const payload = body as { data?: AigcRewritePresetSummary[] } & AigcRewriteApiErrorBody;
+
+    if (!response.ok) {
+        throw new AigcRewriteClientError(
+            response.status,
+            payload?.error?.code ?? 'AIGC_REWRITE_PRESET_REQUEST_FAILED',
+            payload?.error?.message ?? '读取预设模板失败，请稍后再试。',
+            payload?.error?.details ?? null,
+            payload?.error?.requestId ?? null
+        );
+    }
+
+    return payload.data ?? [];
 }
 
 export async function consumeAigcRewriteStream(

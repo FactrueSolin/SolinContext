@@ -3,10 +3,44 @@ import { badRequest } from '../api/errors';
 import { formatZodFieldErrors, mapValidationError } from '../api/http';
 
 const aigcRewriteGenerateSchema = z.object({
-    sampleBefore: z.string().trim().min(1).max(12000),
-    sampleAfter: z.string().trim().min(1).max(12000),
+    sampleBefore: z.string().trim().max(12000).optional(),
+    sampleAfter: z.string().trim().max(12000).optional(),
+    presetId: z.string().trim().min(1).max(120).optional(),
     targetText: z.string().trim().min(1).max(20000),
 }).strict().superRefine((value, context) => {
+    const hasPreset = Boolean(value.presetId);
+    const hasSampleBefore = Boolean(value.sampleBefore);
+    const hasSampleAfter = Boolean(value.sampleAfter);
+
+    if (hasPreset && (hasSampleBefore || hasSampleAfter)) {
+        context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['presetId'],
+            message: 'Preset mode cannot be mixed with manual sample texts',
+        });
+        return;
+    }
+
+    if (!hasPreset && !hasSampleBefore) {
+        context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['sampleBefore'],
+            message: 'Sample before text is required when presetId is absent',
+        });
+    }
+
+    if (!hasPreset && !hasSampleAfter) {
+        context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ['sampleAfter'],
+            message: 'Sample after text is required when presetId is absent',
+        });
+    }
+
+    if (hasPreset || !hasSampleBefore || !hasSampleAfter) {
+        return;
+    }
+
     if (value.sampleBefore === value.sampleAfter) {
         context.addIssue({
             code: z.ZodIssueCode.custom,

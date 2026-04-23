@@ -21,8 +21,10 @@ import AutoResizeTextarea from './ui/AutoResizeTextarea';
 import {
     AigcRewriteClientError,
     consumeAigcRewriteStream,
+    listAigcRewritePresets,
     requestAigcRewriteStream,
     type AigcRewriteMetaEvent,
+    type AigcRewritePresetSummary,
 } from '../lib/aigc-rewrite/client';
 import {
     countAigcRewriteSampleChars,
@@ -190,6 +192,9 @@ export default function AigcRewriteWorkspace() {
     const [isThinkingExpanded, setIsThinkingExpanded] = useState(false);
     const [copyState, setCopyState] = useState<'idle' | 'copied' | 'unsupported'>('idle');
     const [streamMeta, setStreamMeta] = useState<AigcRewriteMetaEvent | null>(null);
+    const [presets, setPresets] = useState<AigcRewritePresetSummary[]>([]);
+    const [isLoadingPresets, setIsLoadingPresets] = useState(false);
+    const [presetError, setPresetError] = useState<string | null>(null);
     const [previousResultText, setPreviousResultText] = useState('');
     const [previousThinkingText, setPreviousThinkingText] = useState('');
     const abortControllerRef = useRef<AbortController | null>(null);
@@ -197,9 +202,18 @@ export default function AigcRewriteWorkspace() {
 
     const sampleQuality = evaluateAigcRewriteSampleQuality(draft.sampleBefore, draft.sampleAfter);
     const savedSample = getSavedAigcRewriteSample(draft);
+    const selectedPreset = draft.selectedPresetId
+        ? presets.find((preset) => preset.id === draft.selectedPresetId) ?? {
+              id: draft.selectedPresetId,
+              name: draft.selectedPresetName ?? '已选预设模板',
+              description: draft.selectedPresetDescription ?? '该模板的示例正文仅在服务端使用，不会返回到前端。',
+              recommendedUsage: '',
+          }
+        : null;
+    const hasActiveSampleSource = Boolean(selectedPreset || savedSample);
     const displayResultText = draft.resultText || previousResultText;
     const displayThinkingText = draft.thinkingText || previousThinkingText;
-    const canSubmit = Boolean(savedSample && draft.targetText.trim() && draft.generationPhase !== 'streaming');
+    const canSubmit = Boolean(hasActiveSampleSource && draft.targetText.trim() && draft.generationPhase !== 'streaming');
     const hasVisibleResult = displayResultText.trim().length > 0;
     const hasVisibleThinking = displayThinkingText.trim().length > 0;
     const hasLiveThinking = draft.thinkingText.trim().length > 0;
@@ -207,6 +221,59 @@ export default function AigcRewriteWorkspace() {
     const sampleCharCount = savedSample ? countAigcRewriteSampleChars(savedSample) : 0;
     const primaryActionLabel = hasVisibleResult ? '再次生成' : '开始改写';
     const thinkingPreview = getThinkingPreview(draft.thinkingText);
+    const currentSampleLevel = selectedPreset ? 'ready' : sampleQuality.level;
+
+    useEffect(() => {
+        if (!workspaceSlug) {
+            return;
+        }
+
+        let cancelled = false;
+
+        async function loadPresets() {
+            setIsLoadingPresets(true);
+            setPresetError(null);
+
+            try {
+                const nextPresets = await listAigcRewritePresets(workspaceSlug);
+
+                if (cancelled) {
+                    return;
+                }
+
+                setPresets(nextPresets);
+
+                if (draft.selectedPresetId) {
+                    const matchedPreset = nextPresets.find((preset) => preset.id === draft.selectedPresetId);
+
+                    if (matchedPreset) {
+                        setDraft((current) =>
+                            mergeAigcRewriteDraft(current, {
+                                selectedPresetName: matchedPreset.name,
+                                selectedPresetDescription: matchedPreset.description,
+                            })
+                        );
+                    }
+                }
+            } catch (error) {
+                if (cancelled) {
+                    return;
+                }
+
+                setPresetError(readMessageFromError(error));
+            } finally {
+                if (!cancelled) {
+                    setIsLoadingPresets(false);
+                }
+            }
+        }
+
+        void loadPresets();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [workspaceSlug, draft.selectedPresetId]);
 
     useEffect(() => {
         if (!workspaceSlug) {
@@ -282,6 +349,9 @@ export default function AigcRewriteWorkspace() {
             sampleSavedAt: savedAt,
             savedSampleBefore: draft.sampleBefore.trim(),
             savedSampleAfter: draft.sampleAfter.trim(),
+            selectedPresetId: null,
+            selectedPresetName: null,
+            selectedPresetDescription: null,
             hasSeenGuide: true,
             lastError: null,
         });
@@ -294,6 +364,9 @@ export default function AigcRewriteWorkspace() {
             patchDraft({
                 sampleBefore: savedSample.before,
                 sampleAfter: savedSample.after,
+                selectedPresetId: null,
+                selectedPresetName: null,
+                selectedPresetDescription: null,
                 lastError: null,
             });
         }
@@ -318,13 +391,35 @@ export default function AigcRewriteWorkspace() {
         setIsGuideExpanded(true);
     }
 
+    function handleSelectPreset(preset: AigcRewritePresetSummary) {
+        patchDraft({
+            selectedPresetId: preset.id,
+            selectedPresetName: preset.name,
+            selectedPresetDescription: preset.description,
+            hasSeenGuide: true,
+            lastError: null,
+        });
+        setIsEditingSample(false);
+        setIsGuideExpanded(false);
+    }
+
+    function handleClearPreset() {
+        patchDraft({
+            selectedPresetId: null,
+            selectedPresetName: null,
+            selectedPresetDescription: null,
+            lastError: null,
+        });
+        setIsEditingSample(savedSample === null);
+    }
+
     function stopGeneration() {
         abortControllerRef.current?.abort();
     }
 
     async function startGeneration() {
-        if (!savedSample) {
-            patchDraft({ lastError: '请先完成步骤 1 并保存样本。' });
+        if (!hasActiveSampleSource) {
+            patchDraft({ lastError: '请先完成步骤 1，保存手动样本或选择一个预设模板。' });
             return;
         }
 
@@ -352,11 +447,16 @@ export default function AigcRewriteWorkspace() {
         try {
             const response = await requestAigcRewriteStream(
                 workspaceSlug,
-                {
-                    sampleBefore: savedSample.before,
-                    sampleAfter: savedSample.after,
-                    targetText: draft.targetText.trim(),
-                },
+                selectedPreset
+                    ? {
+                          presetId: selectedPreset.id,
+                          targetText: draft.targetText.trim(),
+                      }
+                    : {
+                          sampleBefore: savedSample?.before,
+                          sampleAfter: savedSample?.after,
+                          targetText: draft.targetText.trim(),
+                      },
                 controller.signal
             );
 
@@ -472,10 +572,16 @@ export default function AigcRewriteWorkspace() {
         });
     }
 
-    const pageTag = savedSample ? '已保存 1 组样本' : '样本未保存';
-    const pageTagClass = savedSample
-        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-        : 'border-amber-200 bg-amber-50 text-amber-800';
+    const pageTag = selectedPreset
+        ? `已选择预设模板`
+        : savedSample
+          ? '已保存 1 组样本'
+          : '样本未保存';
+    const pageTagClass = selectedPreset
+        ? 'border-cyan-200 bg-cyan-50 text-cyan-800'
+        : savedSample
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          : 'border-amber-200 bg-amber-50 text-amber-800';
 
     if (!isHydrated) {
         return (
@@ -511,7 +617,7 @@ export default function AigcRewriteWorkspace() {
                             {pageTag}
                         </span>
                         <span className="rounded-full border border-white/75 bg-white/75 px-3 py-1.5 text-xs font-medium text-slate-600">
-                            样本仅保存在当前浏览器
+                            {selectedPreset ? '预设示例正文仅在服务端使用' : '样本仅保存在当前浏览器'}
                         </span>
                     </div>
                 </div>
@@ -578,14 +684,90 @@ export default function AigcRewriteWorkspace() {
                             </div>
                             <span
                                 className={`inline-flex rounded-full border px-3 py-1.5 text-xs font-semibold ${getQualityPanelClass(
-                                    sampleQuality.level
+                                    currentSampleLevel
                                 )}`}
                             >
-                                {getSampleStatusText(sampleQuality.level)}
+                                {getSampleStatusText(currentSampleLevel)}
                             </span>
                         </div>
 
-                        {savedSample && !isEditingSample && (
+                        <div className="mt-5 rounded-[24px] border border-cyan-200 bg-[linear-gradient(135deg,rgba(236,254,255,0.98),rgba(239,246,255,0.95))] p-5">
+                            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                                <div>
+                                    <div className="text-sm font-semibold text-cyan-950">预设模板体验</div>
+                                    <p className="mt-2 text-sm leading-6 text-cyan-900/80">
+                                        不想先手动准备样本时，可以直接选择一个预设模板体验整套方法。模板正文仅保存在服务端，不会返回到前端。
+                                    </p>
+                                </div>
+                                {selectedPreset && (
+                                    <span className="rounded-full border border-cyan-200 bg-white/75 px-3 py-1 text-xs font-semibold text-cyan-900">
+                                        当前已选
+                                    </span>
+                                )}
+                            </div>
+
+                            <div className="mt-4 space-y-3">
+                                {isLoadingPresets && (
+                                    <div className="rounded-2xl border border-white/80 bg-white/75 px-4 py-3 text-sm text-slate-600">
+                                        正在读取可用预设模板
+                                    </div>
+                                )}
+                                {presetError && (
+                                    <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                                        {presetError}
+                                    </div>
+                                )}
+                                {presets.map((preset) => {
+                                    const isSelected = selectedPreset?.id === preset.id;
+
+                                    return (
+                                        <div
+                                            key={preset.id}
+                                            className={`rounded-[22px] border p-4 ${
+                                                isSelected
+                                                    ? 'border-cyan-300 bg-white/90 shadow-sm'
+                                                    : 'border-white/80 bg-white/75'
+                                            }`}
+                                        >
+                                            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                                <div>
+                                                    <div className="text-sm font-semibold text-slate-950">{preset.name}</div>
+                                                    <p className="mt-2 text-sm leading-6 text-slate-600">{preset.description}</p>
+                                                    <p className="mt-2 text-sm leading-6 text-cyan-900/80">
+                                                        {preset.recommendedUsage}
+                                                    </p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSelectPreset(preset)}
+                                                    className={`inline-flex items-center rounded-full px-4 py-2 text-sm font-medium ${
+                                                        isSelected
+                                                            ? 'border border-cyan-200 bg-cyan-50 text-cyan-800'
+                                                            : 'bg-slate-950 text-white hover:bg-slate-800'
+                                                    }`}
+                                                >
+                                                    {isSelected ? '已选中' : '直接使用这个模板'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            {selectedPreset && (
+                                <div className="mt-4 flex flex-wrap gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={handleClearPreset}
+                                        className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:border-slate-300"
+                                    >
+                                        改用手动样本
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {!selectedPreset && savedSample && !isEditingSample && (
                             <div className="mt-5 rounded-[24px] border border-emerald-200 bg-[linear-gradient(135deg,rgba(236,253,245,0.98),rgba(240,249,255,0.94))] p-5">
                                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                                     <div>
@@ -649,7 +831,7 @@ export default function AigcRewriteWorkspace() {
                             </div>
                         )}
 
-                        {(!savedSample || isEditingSample) && (
+                        {!selectedPreset && (!savedSample || isEditingSample) && (
                             <>
                                 <div className="mt-5 grid gap-4 lg:grid-cols-2">
                                     <label className="block">
@@ -721,6 +903,9 @@ export default function AigcRewriteWorkspace() {
                                                 patchDraft({
                                                     sampleBefore: savedSample.before,
                                                     sampleAfter: savedSample.after,
+                                                    selectedPresetId: null,
+                                                    selectedPresetName: null,
+                                                    selectedPresetDescription: null,
                                                     lastError: null,
                                                 });
                                             }}
@@ -742,10 +927,10 @@ export default function AigcRewriteWorkspace() {
                                 </div>
                                 <h2 className="mt-2 text-xl font-semibold text-slate-950">待改写区</h2>
                                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                                    输入本次需要改写的目标文本，没有保存样本时不能提交。
+                                    输入本次需要改写的目标文本，没有手动样本或预设模板时不能提交。
                                 </p>
                             </div>
-                            {!savedSample && (
+                            {!hasActiveSampleSource && (
                                 <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800">
                                     请先完成步骤 1
                                 </span>

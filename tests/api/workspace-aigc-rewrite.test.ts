@@ -59,6 +59,13 @@ function createValidBody() {
     };
 }
 
+function createPresetBody() {
+    return {
+        presetId: 'academic-physics-paper',
+        targetText: 'content',
+    };
+}
+
 function createSseStream(chunks: string[]) {
     const encoder = new TextEncoder();
 
@@ -249,6 +256,54 @@ describe('Workspace AIGC Rewrite API', () => {
         expect(data.error.code).toBe('AIGC_REWRITE_VALIDATION_FAILED');
         expect(data.error.details.sampleAfter).toBeDefined();
         expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate supports server-side preset samples', async () => {
+        const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/generate/route');
+
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            body: createSseStream([
+                'event: message_stop\n',
+                'data: {"type":"message_stop"}\n\n',
+            ]),
+        });
+
+        const response = await POST(
+            createRequest(createPresetBody()),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+
+        expect(response.status).toBe(200);
+        expect(mockFetch).toHaveBeenCalledTimes(1);
+
+        const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+        expect(fetchBody.system).toContain('\\subsection{研究背景与意义}');
+        expect(fetchBody.system).toContain('\\subsection{研究背景}');
+        expect(fetchBody.messages[0].content[0].text).toBe('<user>\ncontent\n</user>');
+    });
+
+    it('GET /api/workspaces/[workspaceSlug]/aigc-rewrite/presets returns metadata only', async () => {
+        const { GET } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-rewrite/presets/route');
+
+        const response = await GET(
+            new Request('http://localhost/api/workspaces/ai-team/aigc-rewrite/presets', {
+                headers: { 'x-request-id': 'req-test-2' },
+            }),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+
+        expect(response.status).toBe(200);
+        const data = await response.json();
+
+        expect(data.data).toEqual([
+            expect.objectContaining({
+                id: 'academic-physics-paper',
+                name: '学术论文综述风格',
+            }),
+        ]);
+        expect(JSON.stringify(data)).not.toContain('\\subsection{研究背景与意义}');
+        expect(JSON.stringify(data)).not.toContain('\\subsection{研究背景}');
     });
 
     it('POST /api/workspaces/[workspaceSlug]/aigc-rewrite/generate returns 400 for malformed JSON bodies', async () => {

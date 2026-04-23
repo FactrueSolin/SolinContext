@@ -16,6 +16,9 @@ export interface SavedAigcRewriteSample {
 export interface AigcRewriteDraft {
     sampleBefore: string;
     sampleAfter: string;
+    selectedPresetId: string | null;
+    selectedPresetName: string | null;
+    selectedPresetDescription: string | null;
     targetText: string;
     resultText: string;
     thinkingText: string;
@@ -50,6 +53,9 @@ function createDefaultDraftBase(): AigcRewriteDraft {
     return {
         sampleBefore: '',
         sampleAfter: '',
+        selectedPresetId: null,
+        selectedPresetName: null,
+        selectedPresetDescription: null,
         targetText: '',
         resultText: '',
         thinkingText: '',
@@ -235,6 +241,11 @@ export function mergeAigcRewriteDraft(
     return computeAigcRewriteDraftState({
         sampleBefore: has('sampleBefore') ? patch.sampleBefore ?? '' : current.sampleBefore,
         sampleAfter: has('sampleAfter') ? patch.sampleAfter ?? '' : current.sampleAfter,
+        selectedPresetId: has('selectedPresetId') ? patch.selectedPresetId ?? null : current.selectedPresetId,
+        selectedPresetName: has('selectedPresetName') ? patch.selectedPresetName ?? null : current.selectedPresetName,
+        selectedPresetDescription: has('selectedPresetDescription')
+            ? patch.selectedPresetDescription ?? null
+            : current.selectedPresetDescription,
         targetText: has('targetText') ? patch.targetText ?? '' : current.targetText,
         resultText: has('resultText') ? patch.resultText ?? '' : current.resultText,
         thinkingText: has('thinkingText') ? patch.thinkingText ?? '' : current.thinkingText,
@@ -264,6 +275,9 @@ export function normalizeAigcRewriteDraft(value: unknown): AigcRewriteDraft {
 
     const sampleBefore = trimToString(value.sampleBefore);
     const sampleAfter = trimToString(value.sampleAfter);
+    const selectedPresetId = trimToString(value.selectedPresetId) || null;
+    const selectedPresetName = trimToString(value.selectedPresetName) || null;
+    const selectedPresetDescription = trimToString(value.selectedPresetDescription) || null;
     const sampleSavedAt = trimToString(value.sampleSavedAt) || null;
     const savedSampleBefore =
         trimToString(value.savedSampleBefore) || (sampleSavedAt ? sampleBefore : '');
@@ -273,6 +287,9 @@ export function normalizeAigcRewriteDraft(value: unknown): AigcRewriteDraft {
     return computeAigcRewriteDraftState({
         sampleBefore,
         sampleAfter,
+        selectedPresetId,
+        selectedPresetName,
+        selectedPresetDescription,
         targetText: trimToString(value.targetText),
         resultText: trimToString(value.resultText),
         thinkingText: trimToString(value.thinkingText),

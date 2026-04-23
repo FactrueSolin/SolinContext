@@ -5,6 +5,7 @@ import { requestGenerateUpstream, readGenerateUpstreamError } from '../ai/genera
 import { iterateSseFrames, encodeJsonSseEvent } from '../ai/stream-events';
 import { parseAnthropicStreamEventData } from '../ai/providers/anthropic';
 import type { AigcRewriteGenerateInput } from './validators';
+import { getAigcRewritePresetById } from './presets';
 import { buildAigcRewriteSystemPrompt, buildAigcRewriteUserMessage } from './prompt';
 
 interface AigcRewriteRuntimeConfig {
@@ -27,6 +28,11 @@ interface AigcRewriteUsage {
 interface RateLimitWindow {
     startedAt: number;
     count: number;
+}
+
+interface ResolvedAigcRewriteSample {
+    sampleBefore: string;
+    sampleAfter: string;
 }
 
 const ROUTE_PATH = '/api/workspaces/[workspaceSlug]/aigc-rewrite/generate';
@@ -224,10 +230,15 @@ function emitLog(payload: Record<string, unknown>): void {
 
 function toGenerateRequest(
     input: AigcRewriteGenerateInput,
+    sample: ResolvedAigcRewriteSample,
     runtimeConfig: AigcRewriteRuntimeConfig
 ): GenerateRequest {
     return {
-        systemPrompt: buildAigcRewriteSystemPrompt(input),
+        systemPrompt: buildAigcRewriteSystemPrompt({
+            sampleBefore: sample.sampleBefore,
+            sampleAfter: sample.sampleAfter,
+            targetText: input.targetText,
+        }),
         messages: [
             {
                 role: 'user',
@@ -245,6 +256,30 @@ function toGenerateRequest(
     };
 }
 
+function resolveAigcRewriteSample(input: AigcRewriteGenerateInput): ResolvedAigcRewriteSample {
+    if (input.presetId) {
+        const preset = getAigcRewritePresetById(input.presetId);
+
+        if (!preset) {
+            throw new ApiError(422, 'AIGC_REWRITE_PRESET_NOT_FOUND', 'Preset template does not exist');
+        }
+
+        return {
+            sampleBefore: preset.sampleBefore,
+            sampleAfter: preset.sampleAfter,
+        };
+    }
+
+    if (!input.sampleBefore || !input.sampleAfter) {
+        throw new ApiError(422, 'AIGC_REWRITE_VALIDATION_FAILED', 'Manual sample texts are required');
+    }
+
+    return {
+        sampleBefore: input.sampleBefore,
+        sampleAfter: input.sampleAfter,
+    };
+}
+
 export class AigcRewriteService {
     async generate(
         principal: Principal,
@@ -254,6 +289,7 @@ export class AigcRewriteService {
         assertActiveWorkspace(principal);
 
         const runtimeConfig = getRuntimeConfig();
+        const resolvedSample = resolveAigcRewriteSample(input);
         const executionKey = `${principal.activeWorkspaceId}:${principal.userId}`;
         const release = reserveExecutionSlot(executionKey, runtimeConfig);
         const startedAt = Date.now();
@@ -277,7 +313,7 @@ export class AigcRewriteService {
         try {
             const upstreamResponse = await requestGenerateUpstream(
                 runtimeConfig,
-                toGenerateRequest(input, runtimeConfig),
+                toGenerateRequest(input, resolvedSample, runtimeConfig),
                 { signal: controller.signal }
             );
 
@@ -292,7 +328,7 @@ export class AigcRewriteService {
                     model: runtimeConfig.model,
                     status_code: 502,
                     latency_ms: Date.now() - startedAt,
-                    input_chars: input.sampleBefore.length + input.sampleAfter.length + input.targetText.length,
+                    input_chars: resolvedSample.sampleBefore.length + resolvedSample.sampleAfter.length + input.targetText.length,
                     output_chars: 0,
                     upstream_error: upstreamMessage.slice(0, 200),
                 });
@@ -434,7 +470,10 @@ export class AigcRewriteService {
                             model: runtimeConfig.model,
                             status_code: streamErrored ? 502 : 200,
                             latency_ms: Date.now() - startedAt,
-                            input_chars: input.sampleBefore.length + input.sampleAfter.length + input.targetText.length,
+                            input_chars:
+                                resolvedSample.sampleBefore.length +
+                                resolvedSample.sampleAfter.length +
+                                input.targetText.length,
                             output_chars: outputChars,
                         });
                         finalize();
