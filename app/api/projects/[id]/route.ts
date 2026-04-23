@@ -5,9 +5,6 @@ import { getProjectService } from '../../../lib/projects/service';
 import type { ProjectData } from '../../../types';
 
 const legacyApiConfigSchema = z.object({
-    baseUrl: z.string(),
-    apiKey: z.string(),
-    model: z.string(),
     temperature: z.number().optional(),
     topP: z.number().optional(),
     topK: z.number().optional(),
@@ -16,13 +13,6 @@ const legacyApiConfigSchema = z.object({
     stream: z.boolean().optional(),
     thinking: z.boolean().optional(),
     thinkingBudget: z.number().optional(),
-    compareModel: z
-        .object({
-            baseUrl: z.string(),
-            apiKey: z.string(),
-            model: z.string(),
-        })
-        .optional(),
 });
 
 const legacyProjectSchema: z.ZodType<ProjectData> = z.object({

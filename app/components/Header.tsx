@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useEditorActions, useEditorState } from '../contexts/EditorContext';
 import { FolderOpen, Save, Settings, Download, Upload, Code, FileJson, Sparkles } from 'lucide-react';
 import { exportToXmlPrompt, exportToMessageJson } from '../lib/utils';
+import { sanitizeApiConfig } from '../lib/ai/api-config';
 import { buildWorkspaceModulePath, getWorkspaceSlugFromWindow } from '../lib/workspace-routing';
 
 interface HeaderProps {
@@ -26,8 +27,10 @@ function Header({ variant = 'standalone' }: HeaderProps) {
     const [isCopied, setIsCopied] = useState(false);
     const [isJsonCopied, setIsJsonCopied] = useState(false);
     const isEmbedded = variant === 'embedded';
-    const primaryModel = currentProject?.apiConfig.model.trim() || '未配置模型';
-    const compareModel = currentProject?.apiConfig.compareModel?.model.trim();
+    const primaryModel = currentProject?.apiConfig.primaryModelLabel?.trim() || '服务端主模型';
+    const compareModel = currentProject?.apiConfig.hasCompareModel
+        ? currentProject.apiConfig.compareModelLabel?.trim() || '服务端对比模型'
+        : '';
     const settingsTitle = compareModel
         ? `主模型：${primaryModel}\n对比模型：${compareModel}`
         : `当前模型：${primaryModel}`;
@@ -53,7 +56,11 @@ function Header({ variant = 'standalone' }: HeaderProps) {
 
     const handleExport = () => {
         if (!currentProject) return;
-        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentProject, null, 2));
+        const exportProject = {
+            ...currentProject,
+            apiConfig: sanitizeApiConfig(currentProject.apiConfig),
+        };
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportProject, null, 2));
         const downloadAnchorNode = document.createElement('a');
         downloadAnchorNode.setAttribute("href", dataStr);
         downloadAnchorNode.setAttribute("download", `${currentProject.meta.name}.json`);

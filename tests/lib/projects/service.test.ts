@@ -9,6 +9,7 @@ import { createAppDatabaseContext, type AppDatabaseContext } from '../../../app/
 import { users, workspaces, workspaceMemberships } from '../../../app/lib/db/schema';
 import { ProjectRepository } from '../../../app/lib/projects/repository';
 import { ProjectService } from '../../../app/lib/projects/service';
+import { parseApiConfigJson } from '../../../app/lib/projects/revisions';
 import type { ProjectData } from '../../../app/types';
 
 const principal: Principal = {
@@ -41,6 +42,7 @@ const principal: Principal = {
 describe('ProjectService legacy JSON import', () => {
     let dataDir: string;
     let database: AppDatabaseContext;
+    let repository: ProjectRepository;
     let service: ProjectService;
     let previousDataDir: string | undefined;
 
@@ -83,9 +85,10 @@ describe('ProjectService legacy JSON import', () => {
             updatedAt: 1,
         }).run();
 
+        repository = new ProjectRepository(database.db);
         service = new ProjectService({
             database,
-            repository: new ProjectRepository(database.db),
+            repository,
         });
     });
 
@@ -162,11 +165,30 @@ describe('ProjectService legacy JSON import', () => {
         const detail = service.getLegacyProject(principal, projectId);
         const history = service.listCompatHistory(principal, projectId);
         const historicalDetail = service.getRevisionByCompatFilename(principal, projectId, historyFilename);
+        const updatedDetail = service.updateProject(principal, projectId, {
+            systemPrompt: 'Updated prompt',
+        });
+        const duplicatedDetail = service.duplicateProject(principal, projectId);
+        const projectsAfterDuplicate = service.listProjects(principal, {
+            query: undefined,
+            page: 1,
+            pageSize: 20,
+            sortBy: 'updatedAt',
+            sortOrder: 'desc',
+        });
+        const currentRevision = repository.findCurrentRevision(principal.activeWorkspaceId, projectId);
+        const duplicatedProject = projectsAfterDuplicate.items.find((item) => item.name === 'Current Project Name (Copy)');
+        const duplicatedRevision = duplicatedProject
+            ? repository.findCurrentRevision(principal.activeWorkspaceId, duplicatedProject.id)
+            : null;
 
         expect(projects.items).toHaveLength(1);
         expect(projects.items[0].id).toBe(projectId);
         expect(detail.meta.name).toBe('Current Project Name');
         expect(detail.systemPrompt).toBe('Current prompt');
+        expect(detail.apiConfig.baseUrl).toBeUndefined();
+        expect(detail.apiConfig.apiKey).toBeUndefined();
+        expect(detail.apiConfig.model).toBeUndefined();
         expect(history).toEqual([
             {
                 filename: historyFilename,
@@ -175,5 +197,20 @@ describe('ProjectService legacy JSON import', () => {
         ]);
         expect(historicalDetail.meta.name).toBe('Old Project Name');
         expect(historicalDetail.systemPrompt).toBe('Old prompt');
+        expect(historicalDetail.apiConfig.apiKey).toBeUndefined();
+        expect(updatedDetail.apiConfig.apiKey).toBeUndefined();
+        expect(duplicatedDetail.meta.name).toBe('Current Project Name (Copy)');
+        expect(currentRevision).not.toBeNull();
+        expect(duplicatedRevision).not.toBeNull();
+        expect(parseApiConfigJson(currentRevision!.apiConfigJson)).toMatchObject({
+            baseUrl: 'https://api.anthropic.com',
+            apiKey: 'current-key',
+            model: 'current-model',
+        });
+        expect(parseApiConfigJson(duplicatedRevision!.apiConfigJson)).toMatchObject({
+            baseUrl: 'https://api.anthropic.com',
+            apiKey: 'current-key',
+            model: 'current-model',
+        });
     });
 });

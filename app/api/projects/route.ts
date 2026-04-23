@@ -8,9 +8,6 @@ const legacyCreateProjectSchema = z.object({
     name: z.string().trim().min(1).max(120),
     apiConfig: z
         .object({
-            baseUrl: z.string().trim().min(1),
-            apiKey: z.string(),
-            model: z.string().trim().min(1),
             temperature: z.number().optional(),
             topP: z.number().optional(),
             topK: z.number().optional(),
@@ -19,13 +16,6 @@ const legacyCreateProjectSchema = z.object({
             stream: z.boolean().optional(),
             thinking: z.boolean().optional(),
             thinkingBudget: z.number().optional(),
-            compareModel: z
-                .object({
-                    baseUrl: z.string(),
-                    apiKey: z.string(),
-                    model: z.string(),
-                })
-                .optional(),
         })
         .optional(),
 });

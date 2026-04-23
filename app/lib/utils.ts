@@ -14,6 +14,7 @@ import {
     CodeExecutionToolResultBlock,
     ContainerUploadBlock,
 } from '../types';
+import { sanitizeApiConfig } from './ai/api-config';
 
 // 生成唯一ID
 export function generateId(): string {
@@ -22,11 +23,7 @@ export function generateId(): string {
 
 // 创建默认API配置
 export function createDefaultApiConfig(): ApiConfig {
-    return {
-        baseUrl: 'https://api.anthropic.com',
-        apiKey: '',
-        model: 'claude-sonnet-4-20250514',
-    };
+    return sanitizeApiConfig(undefined);
 }
 
 // 创建空消息

@@ -20,11 +20,7 @@ describe('Utils', () => {
     describe('createDefaultApiConfig', () => {
         it('should return default api config', () => {
             const config = createDefaultApiConfig();
-            expect(config).toEqual({
-                baseUrl: 'https://api.anthropic.com',
-                apiKey: '',
-                model: 'claude-sonnet-4-20250514',
-            });
+            expect(config).toEqual({});
         });
     });
 
@@ -245,9 +241,6 @@ describe('Utils', () => {
             expect(project.messages[1].role).toBe('assistant');
             expect(project.messages[1].content).toEqual([{ type: 'text', text: 'Hello! I\'m a helpful assistant. I can help you with various tasks. How can I assist you today?' }]);
             expect(project.apiConfig).toEqual({
-                baseUrl: 'https://api.anthropic.com',
-                apiKey: '',
-                model: 'claude-sonnet-4-20250514',
             });
         });
     });

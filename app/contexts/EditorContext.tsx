@@ -13,7 +13,6 @@ import type {
     ProjectMeta,
     ProjectData,
     ApiConfig,
-    CompareApiConfig,
     MessageRole,
     ContentBlock,
     EditorMessage,
@@ -23,6 +22,7 @@ import type {
     PromptAssetNotice
 } from '../types';
 import { createDefaultApiConfig, createEmptyMessage, generateId } from '../lib/utils';
+import { sanitizeApiConfig } from '../lib/ai/api-config';
 import { getWorkspaceSlugFromWindow } from '../lib/workspace-routing';
 
 interface ApiEnvelope<T> {
@@ -79,6 +79,20 @@ function mapWorkspaceProjectDetail(detail: WorkspaceProjectDetail): ProjectData 
     };
 }
 
+function mergeApiConfigWithRuntimeMetadata(
+    currentConfig: ApiConfig,
+    nextConfig: Partial<ApiConfig>
+): ApiConfig {
+    const sanitized = sanitizeApiConfig({ ...currentConfig, ...nextConfig });
+
+    return {
+        ...sanitized,
+        primaryModelLabel: currentConfig.primaryModelLabel,
+        compareModelLabel: currentConfig.compareModelLabel,
+        hasCompareModel: currentConfig.hasCompareModel,
+    };
+}
+
 function getProjectCollectionEndpoint(workspaceSlug?: string | null): string {
     return workspaceSlug
         ? `/api/workspaces/${encodeURIComponent(workspaceSlug)}/projects`
@@ -124,7 +138,6 @@ export interface EditorActions {
     closePromptAssets: () => void;
     updateSystemPrompt: (systemPrompt: string) => void;
     updateApiConfig: (apiConfig: Partial<ApiConfig>) => void;
-    updateCompareModel: (compareModel: CompareApiConfig | undefined) => void;
     addMessage: (role: MessageRole) => void;
     deleteMessage: (messageId: string) => void;
     updateMessageRole: (messageId: string, role: MessageRole) => void;
@@ -166,7 +179,6 @@ export type EditorAction =
     | { type: 'SET_MESSAGE_CONTENT'; messageId: string; content: ContentBlock[] }
     | { type: 'SET_MESSAGE_GENERATING'; messageId: string; isGenerating: boolean }
     | { type: 'ADD_MESSAGES'; messages: EditorMessage[] }
-    | { type: 'UPDATE_COMPARE_MODEL'; compareModel: CompareApiConfig | undefined }
     | { type: 'RESOLVE_AB_COMPARE'; keepMessageId: string; abGroupId: string };
 
 export const initialState: EditorState = {
@@ -243,9 +255,15 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
             };
         case 'UPDATE_API_CONFIG':
             if (!state.currentProject) return state;
-            const newApiConfig = { ...state.currentProject.apiConfig, ...action.apiConfig };
+            const newApiConfig = mergeApiConfigWithRuntimeMetadata(
+                state.currentProject.apiConfig,
+                action.apiConfig
+            );
             try {
-                localStorage.setItem('aicontext_api_config', JSON.stringify(newApiConfig));
+                localStorage.setItem(
+                    'aicontext_api_config',
+                    JSON.stringify(sanitizeApiConfig(newApiConfig))
+                );
             } catch (e) {
                 console.error('Failed to save API config to localStorage', e);
             }
@@ -481,22 +499,6 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
                     messages: [...state.currentProject.messages, ...action.messages],
                 },
             };
-        case 'UPDATE_COMPARE_MODEL': {
-            if (!state.currentProject) return state;
-            const newApiConfig = { ...state.currentProject.apiConfig, compareModel: action.compareModel };
-            try {
-                localStorage.setItem('aicontext_api_config', JSON.stringify(newApiConfig));
-            } catch (e) {
-                console.error('Failed to save API config to localStorage', e);
-            }
-            return {
-                ...state,
-                currentProject: {
-                    ...state.currentProject,
-                    apiConfig: newApiConfig,
-                },
-            };
-        }
         case 'RESOLVE_AB_COMPARE': {
             if (!state.currentProject) return state;
             // 删除同组中不是 keepMessageId 的消息，并清除保留消息的 abGroupId 和 abLabel
@@ -770,7 +772,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
             try {
                 const storedConfig = localStorage.getItem('aicontext_api_config');
                 if (storedConfig) {
-                    defaultApiConfig = { ...defaultApiConfig, ...JSON.parse(storedConfig) };
+                    defaultApiConfig = sanitizeApiConfig(JSON.parse(storedConfig));
                 }
             } catch (e) {
                 console.error('Failed to load API config from localStorage', e);
@@ -851,9 +853,6 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
             const apiConfig = state.currentProject.apiConfig;
             const request: GenerateRequest = {
-                baseUrl: apiConfig.baseUrl,
-                apiKey: apiConfig.apiKey,
-                model: apiConfig.model,
                 systemPrompt: state.currentProject.systemPrompt,
                 messages: previousMessages.map((m) => ({
                     role: m.role,
@@ -912,11 +911,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         if (!state.currentProject) return;
 
         const apiConfig = state.currentProject.apiConfig;
-        const compareModel = apiConfig.compareModel;
 
         // 校验：对比模型必须已配置
-        if (!compareModel || !compareModel.apiKey) {
-            dispatch({ type: 'SET_ERROR', error: '请先配置对比模型' });
+        if (!apiConfig.hasCompareModel) {
+            dispatch({ type: 'SET_ERROR', error: '请先在服务端环境变量中配置对比模型' });
             return;
         }
 
@@ -994,16 +992,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
         const requestA: GenerateRequest = {
             ...baseRequest,
-            baseUrl: apiConfig.baseUrl,
-            apiKey: apiConfig.apiKey,
-            model: apiConfig.model,
+            targetModel: 'primary',
         };
 
         const requestB: GenerateRequest = {
             ...baseRequest,
-            baseUrl: compareModel.baseUrl,
-            apiKey: compareModel.apiKey,
-            model: compareModel.model,
+            targetModel: 'compare',
         };
 
         try {
@@ -1092,7 +1086,6 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     const closePromptAssets = useCallback(() => dispatch({ type: 'CLOSE_PROMPT_ASSETS' }), []);
     const updateSystemPrompt = useCallback((systemPrompt: string) => dispatch({ type: 'UPDATE_SYSTEM_PROMPT', systemPrompt }), []);
     const updateApiConfig = useCallback((apiConfig: Partial<ApiConfig>) => dispatch({ type: 'UPDATE_API_CONFIG', apiConfig }), []);
-    const updateCompareModel = useCallback((compareModel: CompareApiConfig | undefined) => dispatch({ type: 'UPDATE_COMPARE_MODEL', compareModel }), []);
     const addMessage = useCallback((role: MessageRole) => dispatch({ type: 'ADD_MESSAGE', role }), []);
     const deleteMessage = useCallback((messageId: string) => dispatch({ type: 'DELETE_MESSAGE', messageId }), []);
     const updateMessageRole = useCallback((messageId: string, role: MessageRole) => dispatch({ type: 'UPDATE_MESSAGE_ROLE', messageId, role }), []);
@@ -1187,7 +1180,6 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         closePromptAssets,
         updateSystemPrompt,
         updateApiConfig,
-        updateCompareModel,
         addMessage,
         deleteMessage,
         updateMessageRole,
@@ -1217,7 +1209,6 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         closePromptAssets,
         updateSystemPrompt,
         updateApiConfig,
-        updateCompareModel,
         addMessage,
         deleteMessage,
         updateMessageRole,

@@ -10,13 +10,37 @@ pnpm dev
 本地开发如果需要覆盖根目录 `.env`，请新建 `.env.development.local`。
 Next.js 在 `pnpm dev` 下会优先读取 `.env.development.local` / `.env.local`，所以你可以把线上 `.env` 保留给 Docker，开发环境单独维护。
 
-可以直接从以下模板复制：
+开发环境可以直接从以下模板复制：
 
 ```bash
 cp .env.development.local.example .env.development.local
 ```
 
 默认会把应用数据写入 `./data`。项目与提示词资产都会存入同一个 SQLite 数据库 `app.db`。
+
+AI 模型配置现在也统一通过后端环境变量提供，前端不再编辑或保存模型、Base URL、API Key：
+
+```bash
+AI_BASE_URL=https://api.anthropic.com
+AI_API_KEY=sk-ant-xxxx
+AI_MODEL=claude-sonnet-4-20250514
+AI_MODEL_LABEL=Claude Sonnet 4
+```
+
+如果要启用 A/B 对比，再额外配置可选的对比模型环境变量：
+
+```bash
+AI_COMPARE_BASE_URL=https://api.anthropic.com
+AI_COMPARE_API_KEY=sk-ant-compare-xxxx
+AI_COMPARE_MODEL=claude-3-5-sonnet-20241022
+AI_COMPARE_MODEL_LABEL=Claude 3.5 Sonnet
+```
+
+如果是 Docker 或正式环境，可以从根目录模板复制：
+
+```bash
+cp .env.example .env
+```
 
 ## Docker Deployment
 

@@ -90,9 +90,7 @@ describe('Projects API', () => {
             systemPrompt: 'You are a helpful assistant.',
             messages: [],
             apiConfig: {
-                baseUrl: 'https://proxy.example.com',
-                apiKey: 'key',
-                model: 'model',
+                temperature: 0.3,
             },
         });
 
@@ -100,9 +98,7 @@ describe('Projects API', () => {
             createRequest('POST', {
                 name: 'Test Project',
                 apiConfig: {
-                    baseUrl: 'https://proxy.example.com',
-                    apiKey: 'key',
-                    model: 'model',
+                    temperature: 0.3,
                 },
             })
         );
@@ -159,11 +155,7 @@ describe('Projects API', () => {
         const response = await POST(
             createRequest('POST', {
                 name: 'Test Project',
-                apiConfig: {
-                    baseUrl: 'https://proxy.example.com',
-                    apiKey: ['sk-test'],
-                    model: 'claude',
-                },
+                apiConfig: 'invalid',
             })
         );
         const data = await response.json();

@@ -47,9 +47,7 @@ describe('Project By ID API', () => {
         systemPrompt: 'prompt',
         messages: [],
         apiConfig: {
-            baseUrl: 'url',
-            apiKey: 'key',
-            model: 'model',
+            temperature: 0.2,
         },
     };
 
@@ -120,9 +118,7 @@ describe('Project By ID API', () => {
                 systemPrompt: 'prompt',
                 messages: [],
                 apiConfig: {
-                    baseUrl: 'url',
-                    apiKey: 'key',
-                    model: 'model',
+                    temperature: 0.2,
                 },
             }),
             { params: Promise.resolve({ id: '123' }) }
@@ -141,12 +137,7 @@ describe('Project By ID API', () => {
         const response = await PUT(
             createRequest('PUT', {
                 ...mockProjectData,
-                apiConfig: {
-                    ...mockProjectData.apiConfig,
-                    model: {
-                        $ne: '',
-                    },
-                },
+                apiConfig: 'invalid',
             }),
             { params: Promise.resolve({ id: '123' }) }
         );

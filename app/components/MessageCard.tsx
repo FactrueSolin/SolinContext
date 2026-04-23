@@ -15,7 +15,9 @@ interface MessageCardProps {
 function MessageCard({ message, index, totalCount }: MessageCardProps) {
     const { deleteMessage, updateMessageRole, addContentBlock, moveMessage, generateForMessage, generateABCompare, stopGeneration, resolveABCompare } = useEditorActions();
     const { currentProject } = useEditorState();
-    const hasCompareModel = !!(currentProject?.apiConfig.compareModel?.apiKey);
+    const hasCompareModel = currentProject?.apiConfig.hasCompareModel === true;
+    const primaryModelLabel = currentProject?.apiConfig.primaryModelLabel?.trim() || '模型 A';
+    const compareModelLabel = currentProject?.apiConfig.compareModelLabel?.trim() || '模型 B';
     const [showAddMenu, setShowAddMenu] = useState(false);
     const [showConfirmDelete, setShowConfirmDelete] = useState(false);
 
@@ -85,13 +87,13 @@ function MessageCard({ message, index, totalCount }: MessageCardProps) {
                         <span
                             className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 max-w-[160px] truncate"
                             title={message.abLabel === 'A'
-                                ? currentProject?.apiConfig.model
-                                : currentProject?.apiConfig.compareModel?.model
+                                ? primaryModelLabel
+                                : compareModelLabel
                             }
                         >
                             {message.abLabel === 'A'
-                                ? (currentProject?.apiConfig.model || '模型 A')
-                                : (currentProject?.apiConfig.compareModel?.model || '模型 B')
+                                ? primaryModelLabel
+                                : compareModelLabel
                             }
                         </span>
                     )}

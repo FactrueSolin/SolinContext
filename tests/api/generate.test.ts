@@ -23,31 +23,50 @@ function createSseStream(chunks: string[]) {
 
 describe('Generate API', () => {
     const originalFetch = global.fetch;
+    const originalEnv = {
+        AI_API_KEY: process.env.AI_API_KEY,
+        AI_BASE_URL: process.env.AI_BASE_URL,
+        AI_MODEL: process.env.AI_MODEL,
+        AI_COMPARE_API_KEY: process.env.AI_COMPARE_API_KEY,
+        AI_COMPARE_BASE_URL: process.env.AI_COMPARE_BASE_URL,
+        AI_COMPARE_MODEL: process.env.AI_COMPARE_MODEL,
+    };
     let mockFetch: Mock;
 
     beforeEach(() => {
         vi.resetModules();
         mockFetch = vi.fn();
         global.fetch = mockFetch;
+        process.env.AI_API_KEY = 'sk-ant-test-key';
+        process.env.AI_BASE_URL = 'https://api.anthropic.com';
+        process.env.AI_MODEL = 'claude-sonnet-4-20250514';
+        delete process.env.AI_COMPARE_API_KEY;
+        delete process.env.AI_COMPARE_BASE_URL;
+        delete process.env.AI_COMPARE_MODEL;
     });
 
     afterEach(() => {
         global.fetch = originalFetch;
+        process.env.AI_API_KEY = originalEnv.AI_API_KEY;
+        process.env.AI_BASE_URL = originalEnv.AI_BASE_URL;
+        process.env.AI_MODEL = originalEnv.AI_MODEL;
+        process.env.AI_COMPARE_API_KEY = originalEnv.AI_COMPARE_API_KEY;
+        process.env.AI_COMPARE_BASE_URL = originalEnv.AI_COMPARE_BASE_URL;
+        process.env.AI_COMPARE_MODEL = originalEnv.AI_COMPARE_MODEL;
     });
 
-    it('POST /api/generate returns 400 when apiKey is missing', async () => {
+    it('POST /api/generate returns 500 when server AI env is missing', async () => {
         const { POST } = await import('../../app/api/generate/route');
+        delete process.env.AI_API_KEY;
 
         const response = await POST(
             createGenerateRequest({
-                baseUrl: 'https://api.anthropic.com/v1',
-                model: 'claude-3-5-sonnet-20241022',
                 messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
             }),
         );
 
-        expect(response.status).toBe(400);
-        await expect(response.json()).resolves.toEqual({ error: 'API key is required' });
+        expect(response.status).toBe(500);
+        await expect(response.json()).resolves.toEqual({ error: 'Missing required env: AI_API_KEY' });
         expect(mockFetch).not.toHaveBeenCalled();
     });
 
@@ -69,9 +88,6 @@ describe('Generate API', () => {
 
         const response = await POST(
             createGenerateRequest({
-                baseUrl: 'https://api.anthropic.com///',
-                apiKey: 'sk-ant-test-key',
-                model: 'claude-sonnet-4-20250514',
                 systemPrompt: 'Be precise',
                 temperature: 0.2,
                 topP: 0.9,
@@ -129,9 +145,6 @@ describe('Generate API', () => {
 
         const response = await POST(
             createGenerateRequest({
-                baseUrl: 'https://api.anthropic.com',
-                apiKey: 'sk-ant-test-key',
-                model: 'claude-3-5-sonnet-20241022',
                 thinking: true,
                 thinkingBudget: 2048,
                 temperature: 0.7,
@@ -144,7 +157,7 @@ describe('Generate API', () => {
         expect(response.status).toBe(200);
 
         const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
-        expect(fetchBody.max_tokens).toBe(8192);
+        expect(fetchBody.max_tokens).toBe(16000);
         expect(fetchBody.thinking).toEqual({ type: 'enabled', budget_tokens: 2048 });
         expect(fetchBody.temperature).toBeUndefined();
         expect(fetchBody.top_p).toBeUndefined();
@@ -167,9 +180,6 @@ describe('Generate API', () => {
 
         const response = await POST(
             createGenerateRequest({
-                baseUrl: 'https://api.anthropic.com/v1',
-                apiKey: 'invalid-key',
-                model: 'claude-3-5-sonnet-20241022',
                 messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
             }),
         );
@@ -186,9 +196,6 @@ describe('Generate API', () => {
 
         const response = await POST(
             createGenerateRequest({
-                baseUrl: 'https://api.anthropic.com/v1',
-                apiKey: 'sk-ant-test-key',
-                model: 'claude-3-5-sonnet-20241022',
                 messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
             }),
         );
@@ -214,9 +221,6 @@ describe('Generate API', () => {
 
         const response = await POST(
             createGenerateRequest({
-                baseUrl: 'https://api.anthropic.com',
-                apiKey: 'sk-ant-test-key',
-                model: 'claude-sonnet-4-20250514',
                 stream: true,
                 messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
             }),
@@ -247,5 +251,36 @@ describe('Generate API', () => {
         expect(response.status).toBe(500);
         expect(data.error).toContain('JSON');
         expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('POST /api/generate uses compare model env when targetModel=compare', async () => {
+        const { POST } = await import('../../app/api/generate/route');
+        process.env.AI_COMPARE_API_KEY = 'sk-ant-compare-key';
+        process.env.AI_COMPARE_BASE_URL = 'https://compare.anthropic.com/';
+        process.env.AI_COMPARE_MODEL = 'claude-3-5-sonnet-20241022';
+
+        mockFetch.mockResolvedValueOnce({
+            ok: true,
+            json: async () => ({
+                content: [{ type: 'text', text: 'compare' }],
+                stop_reason: 'end_turn',
+                usage: { input_tokens: 1, output_tokens: 1 },
+            }),
+        });
+
+        const response = await POST(
+            createGenerateRequest({
+                targetModel: 'compare',
+                messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],
+            }),
+        );
+
+        expect(response.status).toBe(200);
+        expect(mockFetch.mock.calls[0][0]).toBe('https://compare.anthropic.com/v1/messages');
+        expect(mockFetch.mock.calls[0][1].headers['x-api-key']).toBe('sk-ant-compare-key');
+
+        const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+        expect(fetchBody.model).toBe('claude-3-5-sonnet-20241022');
+        expect(fetchBody.max_tokens).toBe(8192);
     });
 });

@@ -186,15 +186,12 @@ export interface EditorMessage {
 
 /** 对比模型配置 — 只需核心字段，高级参数继承默认模型配置 */
 export interface CompareApiConfig {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
 }
 
 export interface ApiConfig {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
   temperature?: number;      // 0-1, 控制随机性
   topP?: number;             // 0-1, 核采样
   topK?: number;             // 正整数, Top-K 采样
@@ -203,8 +200,20 @@ export interface ApiConfig {
   stream?: boolean;          // 流式输出
   thinking?: boolean;        // 思考模式（extended thinking）
   thinkingBudget?: number;   // 思考 token 预算，默认 10000
-  /** 对比模型配置（可选） */
+  /** 仅用于兼容旧项目快照，不再由前端设置 */
+  baseUrl?: string;
+  /** 仅用于兼容旧项目快照，不再由前端设置 */
+  apiKey?: string;
+  /** 仅用于兼容旧项目快照，不再由前端设置 */
+  model?: string;
+  /** 仅用于兼容旧项目快照，不再由前端设置 */
   compareModel?: CompareApiConfig;
+  /** 服务端注入的只读模型标签 */
+  primaryModelLabel?: string;
+  /** 服务端注入的只读对比模型标签 */
+  compareModelLabel?: string;
+  /** 服务端是否已配置对比模型 */
+  hasCompareModel?: boolean;
 }
 
 /** A/B 对比分组信息 */
@@ -264,9 +273,6 @@ export interface PromptAssetNotice {
 
 // API生成请求体
 export interface GenerateRequest {
-  baseUrl: string;
-  apiKey: string;
-  model: string;
   systemPrompt: string;
   messages: Array<{
     role: MessageRole;
@@ -280,6 +286,7 @@ export interface GenerateRequest {
   stream?: boolean;
   thinking?: boolean;
   thinkingBudget?: number;
+  targetModel?: 'primary' | 'compare';
 }
 
 // API生成响应体

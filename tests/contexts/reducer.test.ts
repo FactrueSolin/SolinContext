@@ -15,9 +15,8 @@ describe('editorReducer', () => {
             { id: 'm1', role: 'user', content: [{ type: 'text', text: 'Hello' }] }
         ],
         apiConfig: {
-            baseUrl: 'https://api.anthropic.com',
-            apiKey: 'test-key',
-            model: 'claude-3',
+            primaryModelLabel: 'Claude 3',
+            hasCompareModel: false,
         }
     };
 
@@ -82,10 +81,10 @@ describe('editorReducer', () => {
     });
 
     it('should handle UPDATE_API_CONFIG', () => {
-        const action: EditorAction = { type: 'UPDATE_API_CONFIG', apiConfig: { model: 'new-model' } };
+        const action: EditorAction = { type: 'UPDATE_API_CONFIG', apiConfig: { temperature: 0.7 } };
         const state = editorReducer(stateWithProject, action);
-        expect(state.currentProject?.apiConfig.model).toBe('new-model');
-        expect(state.currentProject?.apiConfig.apiKey).toBe('test-key');
+        expect(state.currentProject?.apiConfig.temperature).toBe(0.7);
+        expect(state.currentProject?.apiConfig.primaryModelLabel).toBe('Claude 3');
     });
 
     it('should handle ADD_MESSAGE', () => {

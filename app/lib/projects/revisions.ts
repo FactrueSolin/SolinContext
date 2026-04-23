@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import type { ApiConfig, EditorMessage } from '../../types';
+import { normalizePersistedApiConfig } from '../ai/api-config';
 
 export type ProjectRevisionOperation =
     | 'create'
@@ -30,11 +31,11 @@ export function parseMessagesJson(messagesJson: string): EditorMessage[] {
 }
 
 export function serializeApiConfig(apiConfig: ApiConfig): string {
-    return JSON.stringify(apiConfig);
+    return JSON.stringify(normalizePersistedApiConfig(apiConfig));
 }
 
 export function parseApiConfigJson(apiConfigJson: string): ApiConfig {
-    return JSON.parse(apiConfigJson) as ApiConfig;
+    return normalizePersistedApiConfig(JSON.parse(apiConfigJson));
 }
 
 export function computeProjectContentHash(snapshot: Omit<ProjectRevisionSnapshot, 'defaultCredentialId'>): string {

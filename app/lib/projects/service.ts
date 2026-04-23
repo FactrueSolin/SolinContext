@@ -1,6 +1,13 @@
 import { ulid } from 'ulid';
 import { createDefaultApiConfig } from '../utils';
 import type { ApiConfig, EditorMessage, ProjectData } from '../../types';
+import {
+    mergeApiConfigForPersistence,
+    normalizePersistedApiConfig,
+    sanitizeApiConfig,
+    withRuntimeApiConfigMetadata,
+} from '../ai/api-config';
+import { getRuntimeApiConfigMetadata } from '../ai/runtime';
 import { getAppDatabaseContext, type AppDatabaseContext } from '../db/client';
 import { ProjectRepository, type ProjectRevisionRow, type ProjectRow } from './repository';
 import type {
@@ -90,7 +97,7 @@ export class ProjectService {
                 name: input.name,
                 systemPrompt: input.systemPrompt,
                 messages: input.messages,
-                apiConfig: input.apiConfig ?? createDefaultApiConfig(),
+                apiConfig: normalizePersistedApiConfig(input.apiConfig ?? createDefaultApiConfig()),
                 defaultCredentialId: input.defaultCredentialId ?? null,
             },
         });
@@ -107,7 +114,7 @@ export class ProjectService {
                 name: input.name,
                 systemPrompt: input.systemPrompt,
                 messages: input.messages,
-                apiConfig: input.apiConfig,
+                apiConfig: normalizePersistedApiConfig(input.apiConfig),
                 defaultCredentialId: null,
             },
         });
@@ -130,41 +137,48 @@ export class ProjectService {
 
     updateProject(principal: Principal, projectId: string, input: UpdateProjectInput): ProjectDetail {
         this.ensureLegacyProjectsImported(principal);
-        const currentDetail = this.getProjectDetail(principal, projectId);
+        const project = this.requireProject(principal.activeWorkspaceId, projectId);
+        const currentRevision = this.requireCurrentRevision(principal.activeWorkspaceId, projectId);
+        const currentSnapshot = this.parseSnapshot(currentRevision);
 
         if (
             input.expectedRevisionId !== undefined &&
-            input.expectedRevisionId !== currentDetail.currentRevisionId
+            input.expectedRevisionId !== currentRevision.id
         ) {
-            throw projectVersionConflict(input.expectedRevisionId ?? null, currentDetail.currentRevisionId);
+            throw projectVersionConflict(input.expectedRevisionId ?? null, currentRevision.id);
         }
 
         const nextSnapshot: ProjectSnapshot = {
-            name: input.name ?? currentDetail.name,
-            systemPrompt: input.systemPrompt ?? currentDetail.systemPrompt,
-            messages: input.messages ?? currentDetail.messages,
-            apiConfig: input.apiConfig ?? currentDetail.apiConfig,
+            name: input.name ?? project.name,
+            systemPrompt: input.systemPrompt ?? currentSnapshot.systemPrompt,
+            messages: input.messages ?? currentSnapshot.messages,
+            apiConfig:
+                input.apiConfig === undefined
+                    ? currentSnapshot.apiConfig
+                    : mergeApiConfigForPersistence(currentSnapshot.apiConfig, input.apiConfig),
             defaultCredentialId:
                 input.defaultCredentialId === undefined
-                    ? currentDetail.defaultCredentialId
+                    ? project.defaultCredentialId
                     : input.defaultCredentialId,
         };
 
         return this.appendRevision(principal, projectId, {
-            name: input.name ?? currentDetail.name,
+            name: input.name ?? project.name,
             snapshot: nextSnapshot,
         });
     }
 
     updateLegacyProject(principal: Principal, projectId: string, project: ProjectData): ProjectData {
         this.ensureLegacyProjectsImported(principal);
+        const currentRevision = this.requireCurrentRevision(principal.activeWorkspaceId, projectId);
+        const currentSnapshot = this.parseSnapshot(currentRevision);
         const detail = this.appendRevision(principal, projectId, {
             name: project.meta.name,
             snapshot: {
                 name: project.meta.name,
                 systemPrompt: project.systemPrompt,
                 messages: project.messages,
-                apiConfig: project.apiConfig,
+                apiConfig: mergeApiConfigForPersistence(currentSnapshot.apiConfig, project.apiConfig),
                 defaultCredentialId: null,
             },
         });
@@ -232,19 +246,22 @@ export class ProjectService {
 
     duplicateProject(principal: Principal, projectId: string): ProjectData {
         this.ensureLegacyProjectsImported(principal);
-        const original = this.getProjectDetail(principal, projectId);
+        const originalProject = this.requireProject(principal.activeWorkspaceId, projectId);
+        const originalRevision = this.requireCurrentRevision(principal.activeWorkspaceId, projectId);
+        const originalSnapshot = this.parseSnapshot(originalRevision);
+        const duplicatedName = `${originalProject.name} (Copy)`;
 
         const detail = this.createProjectFromSnapshot(principal, {
-            name: `${original.name} (Copy)`,
+            name: duplicatedName,
             snapshot: {
-                name: `${original.name} (Copy)`,
-                systemPrompt: original.systemPrompt,
-                messages: original.messages,
-                apiConfig: original.apiConfig,
-                defaultCredentialId: original.defaultCredentialId,
+                name: duplicatedName,
+                systemPrompt: originalSnapshot.systemPrompt,
+                messages: originalSnapshot.messages,
+                apiConfig: originalSnapshot.apiConfig,
+                defaultCredentialId: originalProject.defaultCredentialId,
             },
             operationType: 'duplicate',
-            sourceRevisionId: original.currentRevisionId,
+            sourceRevisionId: originalRevision.id,
         });
 
         return this.mapLegacyProject(detail);
@@ -276,7 +293,10 @@ export class ProjectService {
             },
             systemPrompt: snapshot.systemPrompt,
             messages: snapshot.messages,
-            apiConfig: snapshot.apiConfig,
+            apiConfig: withRuntimeApiConfigMetadata(
+                sanitizeApiConfig(snapshot.apiConfig),
+                getRuntimeApiConfigMetadata()
+            ),
         };
     }
 
@@ -299,6 +319,10 @@ export class ProjectService {
             sourceRevisionId?: string | null;
         }
     ): ProjectDetail {
+        const sanitizedSnapshot: ProjectSnapshot = {
+            ...input.snapshot,
+            apiConfig: normalizePersistedApiConfig(input.snapshot.apiConfig),
+        };
         const now = Date.now();
         const projectId = ulid();
         const revisionId = ulid();
@@ -306,8 +330,8 @@ export class ProjectService {
             id: projectId,
             workspaceId: principal.activeWorkspaceId,
             name: input.name,
-            systemPrompt: input.snapshot.systemPrompt,
-            defaultCredentialId: input.snapshot.defaultCredentialId,
+            systemPrompt: sanitizedSnapshot.systemPrompt,
+            defaultCredentialId: sanitizedSnapshot.defaultCredentialId,
             currentRevisionId: revisionId,
             createdBy: principal.userId,
             updatedBy: principal.userId,
@@ -323,14 +347,14 @@ export class ProjectService {
             revisionNumber: 1,
             historyKey: buildCompatHistoryKey(revisionId),
             nameSnapshot: input.name,
-            systemPrompt: input.snapshot.systemPrompt,
-            messagesJson: serializeMessages(input.snapshot.messages),
-            apiConfigJson: serializeApiConfig(input.snapshot.apiConfig),
+            systemPrompt: sanitizedSnapshot.systemPrompt,
+            messagesJson: serializeMessages(sanitizedSnapshot.messages),
+            apiConfigJson: serializeApiConfig(sanitizedSnapshot.apiConfig),
             contentHash: computeProjectContentHash({
                 name: input.name,
-                systemPrompt: input.snapshot.systemPrompt,
-                messages: input.snapshot.messages,
-                apiConfig: input.snapshot.apiConfig,
+                systemPrompt: sanitizedSnapshot.systemPrompt,
+                messages: sanitizedSnapshot.messages,
+                apiConfig: sanitizedSnapshot.apiConfig,
             }),
             operationType: input.operationType ?? 'create',
             sourceRevisionId: input.sourceRevisionId ?? null,
@@ -343,7 +367,7 @@ export class ProjectService {
             this.repository.createProjectWithRevision({ project, revision });
         })();
 
-        return this.mapDetail(project, revision, input.snapshot);
+        return this.mapDetail(project, revision, sanitizedSnapshot);
     }
 
     private appendRevision(
@@ -356,6 +380,10 @@ export class ProjectService {
             sourceRevisionId?: string | null;
         }
     ): ProjectDetail {
+        const sanitizedSnapshot: ProjectSnapshot = {
+            ...input.snapshot,
+            apiConfig: normalizePersistedApiConfig(input.snapshot.apiConfig),
+        };
         const project = this.requireProject(principal.activeWorkspaceId, projectId);
         const currentRevision = this.requireCurrentRevision(principal.activeWorkspaceId, projectId);
         const now = Date.now();
@@ -367,14 +395,14 @@ export class ProjectService {
             revisionNumber: currentRevision.revisionNumber + 1,
             historyKey: buildCompatHistoryKey(revisionId),
             nameSnapshot: input.name,
-            systemPrompt: input.snapshot.systemPrompt,
-            messagesJson: serializeMessages(input.snapshot.messages),
-            apiConfigJson: serializeApiConfig(input.snapshot.apiConfig),
+            systemPrompt: sanitizedSnapshot.systemPrompt,
+            messagesJson: serializeMessages(sanitizedSnapshot.messages),
+            apiConfigJson: serializeApiConfig(sanitizedSnapshot.apiConfig),
             contentHash: computeProjectContentHash({
                 name: input.name,
-                systemPrompt: input.snapshot.systemPrompt,
-                messages: input.snapshot.messages,
-                apiConfig: input.snapshot.apiConfig,
+                systemPrompt: sanitizedSnapshot.systemPrompt,
+                messages: sanitizedSnapshot.messages,
+                apiConfig: sanitizedSnapshot.apiConfig,
             }),
             operationType: input.operationType ?? 'update',
             sourceRevisionId: input.sourceRevisionId ?? currentRevision.id,
@@ -388,8 +416,8 @@ export class ProjectService {
                 projectId,
                 workspaceId: principal.activeWorkspaceId,
                 name: input.name,
-                systemPrompt: input.snapshot.systemPrompt,
-                defaultCredentialId: input.snapshot.defaultCredentialId,
+                systemPrompt: sanitizedSnapshot.systemPrompt,
+                defaultCredentialId: sanitizedSnapshot.defaultCredentialId,
                 updatedBy: principal.userId,
                 updatedAt: now,
                 revision,
@@ -399,15 +427,15 @@ export class ProjectService {
         const updatedProject: ProjectRow = {
             ...project,
             name: input.name,
-            systemPrompt: input.snapshot.systemPrompt,
-            defaultCredentialId: input.snapshot.defaultCredentialId,
+            systemPrompt: sanitizedSnapshot.systemPrompt,
+            defaultCredentialId: sanitizedSnapshot.defaultCredentialId,
             currentRevisionId: revision.id,
             updatedBy: principal.userId,
             updatedAt: now,
             rowVersion: project.rowVersion + 1,
         };
 
-        return this.mapDetail(updatedProject, revision, input.snapshot);
+        return this.mapDetail(updatedProject, revision, sanitizedSnapshot);
     }
 
     private requireProject(workspaceId: string, projectId: string): ProjectRow {
@@ -470,13 +498,18 @@ export class ProjectService {
         revision: ProjectRevisionRow,
         snapshot: ProjectSnapshot
     ): ProjectDetail {
+        const apiConfig = withRuntimeApiConfigMetadata(
+            sanitizeApiConfig(snapshot.apiConfig),
+            getRuntimeApiConfigMetadata()
+        );
+
         return {
             ...this.mapSummary(project),
             systemPrompt: snapshot.systemPrompt,
             defaultCredentialId: snapshot.defaultCredentialId,
             currentRevisionId: revision.id,
             messages: snapshot.messages,
-            apiConfig: snapshot.apiConfig,
+            apiConfig,
         };
     }
 

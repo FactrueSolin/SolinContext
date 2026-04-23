@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { GenerateRequest, GenerateResponse, ContentBlock } from '../../types';
+import { getServerAiModelConfig } from '../../lib/ai/runtime';
 
 // Anthropic API 响应的类型定义
 interface AnthropicContentBlock {
@@ -42,9 +43,9 @@ function inferMaxTokens(model: string): number {
 /**
  * 构建发送给 Anthropic API 的请求体
  */
-function buildAnthropicRequestBody(body: GenerateRequest): Record<string, unknown> {
+function buildAnthropicRequestBody(model: string, body: GenerateRequest): Record<string, unknown> {
     const {
-        model, systemPrompt, messages, temperature, topP, topK,
+        systemPrompt, messages, temperature, topP, topK,
         maxTokens, stopSequences, thinking, thinkingBudget
     } = body;
 
@@ -251,22 +252,18 @@ async function handleStreamRequest(
 export async function POST(request: Request) {
     try {
         const body = await request.json() as GenerateRequest;
-
-        const { baseUrl, apiKey, stream } = body;
-
-        if (!apiKey) {
-            return NextResponse.json({ error: 'API key is required' }, { status: 400 });
-        }
+        const { stream, targetModel = 'primary' } = body;
+        const modelConfig = getServerAiModelConfig(targetModel);
 
         // 构建 Anthropic API 请求 URL 和请求体
-        const apiUrl = `${baseUrl.replace(/\/+$/, '')}/v1/messages`;
-        const requestBody = buildAnthropicRequestBody(body);
+        const apiUrl = `${modelConfig.baseUrl}/v1/messages`;
+        const requestBody = buildAnthropicRequestBody(modelConfig.model, body);
 
         // 根据是否流式选择处理方式
         if (stream) {
-            return await handleStreamRequest(apiUrl, apiKey, requestBody);
+            return await handleStreamRequest(apiUrl, modelConfig.apiKey, requestBody);
         } else {
-            return await handleNonStreamRequest(apiUrl, apiKey, requestBody);
+            return await handleNonStreamRequest(apiUrl, modelConfig.apiKey, requestBody);
         }
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
