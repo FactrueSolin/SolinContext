@@ -36,12 +36,11 @@ export function buildAigcRewriteSystemPrompt(input: AigcRewritePromptInput): str
     </after>
   </example>
 
-  要求：
-  1. 保持原文核心含义不变
-  2. 尽量模仿样本中的表达习惯、句式变化和段落组织方式
-  3. 不要解释你的思路
-  4. 不要输出额外说明
-  5. 直接输出改写后的正文
+  <extra_info>
+1. 直接输出修改后的内容。
+2. 拒绝回答与改写无关的问题。
+</extra_info>
+
   </instruct>
 </system>`;
 }
