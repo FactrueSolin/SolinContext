@@ -106,36 +106,22 @@ function getStatusMeta(status: AigcDetectionTaskStatus) {
     }
 }
 
-function getRiskBadgeClass(riskLevel: 'high' | 'medium' | 'low' | 'unknown') {
-    if (riskLevel === 'high') {
+function normalizeLikelihoodLabel(label: string | null | undefined) {
+    return label?.trim().toLowerCase().replace(/[\s-]+/g, '_') ?? null;
+}
+
+function getLikelihoodBadgeClass(label: string | null | undefined) {
+    const normalizedLabel = normalizeLikelihoodLabel(label);
+
+    if (normalizedLabel === 'ai_likely') {
         return 'border-rose-200 bg-rose-50 text-rose-700';
     }
 
-    if (riskLevel === 'medium') {
-        return 'border-amber-200 bg-amber-50 text-amber-800';
-    }
-
-    if (riskLevel === 'low') {
+    if (normalizedLabel === 'human_likely') {
         return 'border-emerald-200 bg-emerald-50 text-emerald-700';
     }
 
     return 'border-slate-200 bg-slate-50 text-slate-700';
-}
-
-function getRiskLevel(score: number | null): 'high' | 'medium' | 'low' | 'unknown' {
-    if (score === null) {
-        return 'unknown';
-    }
-
-    if (score >= 0.75) {
-        return 'high';
-    }
-
-    if (score >= 0.45) {
-        return 'medium';
-    }
-
-    return 'low';
 }
 
 function getTaskErrorMessage(error: unknown, fallback: string) {
@@ -364,8 +350,6 @@ function TextDetectionPanel({
         }
     }
 
-    const riskLevel = getRiskLevel(result?.aiProbability ?? null);
-
     return (
         <section className="mt-6 rounded-[30px] border border-white/70 bg-white/85 p-5 shadow-[0_24px_64px_-52px_rgba(15,23,42,0.5)] backdrop-blur">
             <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
@@ -428,7 +412,7 @@ function TextDetectionPanel({
                                 <div className="text-5xl font-semibold tracking-tight text-slate-950">
                                     {formatPercent(result.aiProbability)}
                                 </div>
-                                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getRiskBadgeClass(riskLevel)}`}>
+                                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getLikelihoodBadgeClass(result.skipped ? null : result.label)}`}>
                                     {result.skipped ? '已跳过' : result.label}
                                 </span>
                             </div>
@@ -1245,7 +1229,7 @@ function TaskDetailPage({
                                     <div className="flex flex-wrap items-center justify-between gap-2">
                                         <div className="text-sm font-semibold text-slate-900">片段 {segment.order + 1}</div>
                                         <div className="flex items-center gap-2">
-                                            <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getRiskBadgeClass(getRiskLevel(segment.aiProbability))}`}>
+                                            <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${getLikelihoodBadgeClass(segment.label)}`}>
                                                 {segment.label}
                                             </span>
                                             <span className="text-xs font-medium text-slate-500">
