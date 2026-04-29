@@ -9,9 +9,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "AI Context Editor - 可视化编辑 AI 上下文",
-  description:
-    "可视化编辑 AI 对话上下文，支持 Anthropic 格式消息编辑、流式生成、A/B 对比等功能。轻松构建和管理 AI 对话上下文。",
+  title: "AI Context Editor",
+  description: "进入 AI Context Editor 工作区。",
   keywords: [
     "AI",
     "Context Editor",
@@ -24,18 +23,16 @@ export const metadata: Metadata = {
     "A/B 对比",
   ],
   openGraph: {
-    title: "AI Context Editor - 可视化编辑 AI 上下文",
-    description:
-      "可视化编辑 AI 对话上下文，支持 Anthropic 格式消息编辑、流式生成、A/B 对比等功能。",
+    title: "AI Context Editor",
+    description: "进入 AI Context Editor 工作区。",
     type: "website",
     siteName: "AI Context Editor",
     locale: "zh_CN",
   },
   twitter: {
     card: "summary",
-    title: "AI Context Editor - 可视化编辑 AI 上下文",
-    description:
-      "可视化编辑 AI 对话上下文，支持 Anthropic 格式消息编辑、流式生成、A/B 对比等功能。",
+    title: "AI Context Editor",
+    description: "进入 AI Context Editor 工作区。",
   },
 };
 

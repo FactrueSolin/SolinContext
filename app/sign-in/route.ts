@@ -6,6 +6,6 @@ export async function GET() {
 
     await signIn(config, {
         redirectUri: `${config.baseUrl}/callback`,
-        postRedirectUri: config.baseUrl,
+        postRedirectUri: `${config.baseUrl}/editor`,
     });
 }
