@@ -603,6 +603,91 @@ app/lib/aigc-detection/
 - 当前项目是 Next.js 应用，不适合首期引入复杂常驻队列系统
 - 该方案实现成本低，且足以支持首期业务
 
+## 6.6 后端技术选型结论
+
+本功能首期后端方案必须收敛为以下实现边界：
+
+- 运行时：`Next.js Route Handlers`，且统一运行在 `Node.js runtime`
+- Web 层：继续使用工作区路由 `/api/workspaces/[workspaceSlug]/...`
+- 数据库：`SQLite`
+- ORM：`drizzle-orm`
+- Migration：`drizzle-kit`
+- 校验：`zod`
+- ID：本地任务与事件主键统一使用 `ulid`
+- 时间：统一存储为 `Unix epoch ms`
+- 文件哈希：统一使用 Node.js `crypto` 生成 `SHA-256`
+
+原因：
+
+- 该功能需要访问本地 `data/` 目录、落库 SQLite、处理 `multipart/form-data`，不适合 `Edge runtime`
+- 当前项目已经存在工作区、多用户和本地持久化前提，继续沿用单体 BFF 方案，实施成本最低
+- `drizzle-orm + SQLite` 已与本文其他设计保持一致，避免为单个子系统再引入独立存储栈
+
+明确约束：
+
+- 首期不引入独立 Java/Spring、NestJS、Rust 网关或额外微服务
+- 首期不引入 Redis、BullMQ、RabbitMQ 作为任务队列前提
+- 首期不引入对象存储作为上传主链路前提
+- 第三方检测服务 SDK 若存在，也不得直接泄漏到 route 层；必须经 `client.ts` 二次封装
+
+## 6.7 目录与职责规范
+
+建议目录：
+
+```text
+app/
+  api/
+    workspaces/
+      [workspaceSlug]/
+        aigc-detection/
+          tasks/
+            route.ts
+            [taskId]/
+              route.ts
+              result/
+                route.ts
+              retry/
+                route.ts
+  lib/
+    aigc-detection/
+      client.ts
+      dto.ts
+      errors.ts
+      mapper.ts
+      repository.ts
+      service.ts
+      storage.ts
+      sync.ts
+      validators.ts
+    db/
+      schema/
+        aigc-detection.ts
+```
+
+职责边界必须满足：
+
+- `route.ts`
+  - 只处理 HTTP 协议、参数解析、权限校验、响应映射
+- `service.ts`
+  - 负责业务编排、事务边界、状态流转、去重决策、重试规则
+- `repository.ts`
+  - 只负责数据库读写，不承载业务策略
+- `client.ts`
+  - 只负责第三方 HTTP 协议与返回解析，不访问本地数据库
+- `storage.ts`
+  - 只负责本地文件路径、落盘、读取、删除
+- `sync.ts`
+  - 只负责与第三方状态同步和结果回填
+- `dto.ts / mapper.ts / validators.ts`
+  - 负责类型、契约、校验和内外部结构转换
+
+禁止事项：
+
+- route 层直接 `fetch` 第三方接口
+- repository 层直接拼接第三方请求
+- 前端页面直接依赖第三方返回 JSON 结构
+- 在任意层使用 `any`
+
 ## 7. 数据模型设计
 
 建议至少新增两张表。
@@ -695,6 +780,14 @@ app/lib/aigc-detection/
 - `(external_task_id)`
 - `(created_by, created_at desc)`
 
+建议补充约束：
+
+- 主键：`id` 唯一
+- 唯一索引：`external_task_id` 在非空时应唯一
+- 非唯一索引：`(workspace_id, source_file_sha256)`，用于本地哈希复用和排查
+- `status`、`storage_status`、`source_file_ext` 必须采用受限枚举，不允许自由文本
+- `result_json`、`raw_result_json`、`payload_json` 使用 SQLite `text` 存 JSON 字符串，进入服务层后再做严格类型解析
+
 ## 7.2 `aigc_detection_task_events`
 
 用途：记录状态流转与调试事件，避免后续排障只能看最终状态。
@@ -723,6 +816,47 @@ app/lib/aigc-detection/
 - 结果 JSON 结构未来可能调整，直接存 `result_json` 更灵活
 
 后续如果需要做结果搜索、统计聚合、句子级筛选，再考虑结果明细表拆分。
+
+## 7.4 状态机与流转约束
+
+本地任务状态机必须固定，避免实现阶段各处自行定义：
+
+```text
+queued_local
+  -> submitted
+  -> processing
+  -> succeeded
+
+queued_local
+  -> submit_failed
+
+submitted | processing
+  -> failed
+
+submit_failed | failed
+  -> submitted   (retry)
+```
+
+流转规则：
+
+- `queued_local`
+  - 文件已入库入盘，但尚未成功提交第三方
+- `submit_failed`
+  - 仅表示“提交第三方失败”，不表示第三方任务执行失败
+- `submitted`
+  - 已拿到 `external_task_id`，但尚未进入明确处理中间态
+- `processing`
+  - 第三方已开始处理
+- `succeeded`
+  - 已拿到并落库标准化结果
+- `failed`
+  - 第三方任务终态失败，或结果查询返回明确失败终态
+
+约束：
+
+- `succeeded` 后禁止再次同步覆盖已落库结果，除非走显式重试
+- `submit_failed` / `failed` 之外的状态不得执行重试
+- 状态流转必须由 `service.ts` 或 `sync.ts` 统一执行，route/repository 不得私自更新
 
 ## 8. 本地文件缓存设计
 
@@ -769,6 +903,16 @@ data/
 
 ## 9. 外部服务对接方案
 
+## 9.0 对接原则
+
+后端对第三方服务的调用必须遵循以下规范：
+
+- 所有第三方请求都通过 `client.ts`
+- 所有第三方返回先做 schema 校验，再映射为本地 DTO
+- 所有第三方错误先归一化为本地错误码，再决定是否暴露给前端
+- 所有第三方超时、网络失败、5xx 都必须写入任务事件表和结构化日志
+- 不在数据库中持久化第三方鉴权密钥
+
 ## 9.1 环境变量
 
 建议新增：
@@ -800,6 +944,13 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 - 不把外部服务地址下发到浏览器
 - 所有第三方请求均由本项目服务端读取 `.env` 后发起
 
+建议追加：
+
+- `AIGC_DETECTION_SYNC_LOCK_MS`
+  - 详情接口触发懒同步时的本地锁超时，默认 `15000`
+- `AIGC_DETECTION_RESULT_CACHE_ENABLED`
+  - 是否启用本地成功结果复用，默认 `false`
+
 ## 9.2 创建任务调用
 
 本系统调用外部：
@@ -827,6 +978,12 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 - 推荐加入 `workspaceId`，避免跨工作区请求产生语义耦合
 - 此调用只能在本项目服务端进行，前端只提交文件到本项目的 `/api/workspaces/[workspaceSlug]/aigc-detection/tasks`
 
+实现要求：
+
+- 创建本地任务、写入文件、计算哈希、保存数据库记录，必须先成功，再发起第三方提交
+- 第三方提交成功后，必须在同一业务动作中回写 `external_task_id`、`submitted_at`、`status`
+- 第三方提交失败时，不回滚本地任务和本地文件，而是把任务置为 `submit_failed`
+
 ## 9.3 状态同步调用
 
 同步过程分两步：
@@ -843,6 +1000,12 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 - `succeeded` -> `succeeded`
 - `failed` -> `failed`
 - `canceled` -> `failed`
+
+同步要求：
+
+- 同步任务状态时只允许从“旧状态”向“更终态”推进，不允许把 `failed/succeeded` 回退到处理中
+- 第三方状态查询失败时，不覆盖本地终态，只更新 `last_synced_at`、事件记录与错误上下文
+- 只有在第三方状态为成功终态时，才允许拉取 `result` 并更新 `result_json`
 
 ## 9.4 结果标准化
 
@@ -874,6 +1037,29 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 
 这样前端契约稳定，第三方升级时改动集中在服务端映射层。
 
+## 9.5 技术方案指导
+
+首期推荐方案：
+
+- 单体 BFF：当前最佳解，应作为正式设计结论
+- 本地 SQLite：满足任务中心、审计、重试与缓存索引需求
+- 轻量轮询同步：满足现阶段异步任务编排，无需额外基础设施
+
+备选方案与取舍：
+
+- 方案 A：引入 Redis + Worker 主动消费队列
+  - 优点：异步处理更强，适合高并发
+  - 缺点：部署和运维复杂度显著提高
+  - 结论：首期不采用
+- 方案 B：引入独立后端微服务包装 AIGC 检测
+  - 优点：服务边界清晰
+  - 缺点：当前项目仍是单体 BFF，拆分过早，增加鉴权和工作区上下文传递成本
+  - 结论：首期不采用
+- 方案 C：浏览器直连第三方检测服务
+  - 优点：实现快
+  - 缺点：泄漏真实地址、难做权限与审计、无法稳定沉淀任务中心
+  - 结论：明确禁止
+
 ## 10. 权限模型
 
 当前仓库已有工作区权限体系，但尚无 AIGC 检测相关权限。建议新增：
@@ -895,6 +1081,108 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 
 ## 11. 接口设计
 
+本节定义本功能正式后端 API 契约。实现阶段必须以本节为准，不再由页面或调用方临时发明字段。
+
+## 11.0 统一响应结构
+
+成功响应：
+
+```json
+{
+  "data": {}
+}
+```
+
+列表响应：
+
+```json
+{
+  "data": {
+    "items": [],
+    "pagination": {
+      "page": 1,
+      "pageSize": 20,
+      "total": 0
+    }
+  }
+}
+```
+
+失败响应：
+
+```json
+{
+  "error": {
+    "code": "AIGC_DETECTION_VALIDATION_FAILED",
+    "message": "Uploaded file type is not supported",
+    "details": null,
+    "requestId": "01J..."
+  }
+}
+```
+
+约束：
+
+- 所有接口都返回 JSON，不返回裸字符串
+- `requestId` 建议从统一请求上下文注入，便于排障
+- `details` 仅用于字段级校验信息或安全可暴露的业务上下文
+
+## 11.0.1 DTO 规范
+
+建议统一 DTO：
+
+```ts
+interface AigcDetectionTaskSummary {
+  id: string;
+  workspaceId: string;
+  sourceFileName: string;
+  sourceFileExt: 'pdf' | 'doc' | 'docx';
+  sourceFileSize: number;
+  sourceFileSha256: string;
+  status: 'queued_local' | 'submit_failed' | 'submitted' | 'processing' | 'succeeded' | 'failed';
+  externalStatus: string | null;
+  progressCurrent: number | null;
+  progressTotal: number | null;
+  progressUnit: string | null;
+  overallScore: number | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  retryCount: number;
+  deduplicated: boolean;
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+}
+```
+
+```ts
+interface AigcDetectionTaskDetail extends AigcDetectionTaskSummary {
+  canRetry: boolean;
+  resultAvailable: boolean;
+  submittedAt: number | null;
+  lastSyncedAt: number | null;
+}
+```
+
+```ts
+interface AigcDetectionResultDto {
+  taskId: string;
+  status: 'succeeded';
+  overallScore: number;
+  humanScore: number | null;
+  summary: string | null;
+  segments: unknown[];
+  sentences: unknown[];
+  createdAt: number;
+  completedAt: number;
+}
+```
+
+说明：
+
+- `segments`、`sentences` 进入实现阶段时应继续细化为明确类型；若第三方结构尚不稳定，先在 `mapper.ts` 内部做严格 schema 约束后再导出
+- 即使内部持久化 `raw_result_json`，对外 DTO 也不得直接透出第三方原始结构
+
 ## 11.1 创建任务
 
 `POST /api/workspaces/[workspaceSlug]/aigc-detection/tasks`
@@ -908,12 +1196,61 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 - `file`
 - `forceReprocess`
 
+约束：
+
+- `file` 必填
+- `forceReprocess` 可选，布尔值，默认 `false`
+- 服务端最大接收体积由 `AIGC_DETECTION_MAX_UPLOAD_BYTES` 控制
+
+成功响应：
+
+- `201 Created`
+
+```json
+{
+  "data": {
+    "task": {
+      "id": "01J...",
+      "workspaceId": "01W...",
+      "sourceFileName": "paper.pdf",
+      "sourceFileExt": "pdf",
+      "sourceFileSize": 123456,
+      "sourceFileSha256": "abcd...",
+      "status": "submitted",
+      "externalStatus": "queued",
+      "progressCurrent": null,
+      "progressTotal": null,
+      "progressUnit": null,
+      "overallScore": null,
+      "errorCode": null,
+      "errorMessage": null,
+      "retryCount": 0,
+      "deduplicated": false,
+      "createdAt": 1760000000000,
+      "updatedAt": 1760000000000,
+      "completedAt": null
+    },
+    "reusedResult": false
+  }
+}
+```
+
 返回：
 
 - 本地任务 ID
 - 当前状态
 - 文件信息
 - 是否复用已有结果
+
+失败码：
+
+- `400` `AIGC_DETECTION_BAD_REQUEST`
+- `403` `AIGC_DETECTION_FORBIDDEN`
+- `413` `AIGC_DETECTION_FILE_TOO_LARGE`
+- `415` `AIGC_DETECTION_UNSUPPORTED_FILE_TYPE`
+- `422` `AIGC_DETECTION_VALIDATION_FAILED`
+- `502` `AIGC_DETECTION_EXTERNAL_SUBMIT_FAILED`
+- `500` `AIGC_DETECTION_STORAGE_ERROR`
 
 ## 11.2 查询任务列表
 
@@ -927,6 +1264,21 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 - `keyword`
 - `createdBy`
 
+默认值：
+
+- `page = 1`
+- `pageSize = 20`
+- `status = all`
+
+响应：
+
+- `200 OK`
+- `items` 元素为 `AigcDetectionTaskSummary`
+
+排序：
+
+- 默认 `createdAt desc`
+
 ## 11.3 查询任务详情
 
 `GET /api/workspaces/[workspaceSlug]/aigc-detection/tasks/[taskId]`
@@ -939,6 +1291,16 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 - 是否可重试
 - 结果摘要
 
+响应：
+
+- `200 OK`
+- `data.task` 为 `AigcDetectionTaskDetail`
+
+行为约束：
+
+- 如果任务状态是 `submitted/processing`，接口内部可按同步阈值触发一次懒同步
+- 懒同步失败不改变 HTTP 200 语义，但需要更新任务事件与错误上下文
+
 ## 11.4 查询任务结果
 
 `GET /api/workspaces/[workspaceSlug]/aigc-detection/tasks/[taskId]/result`
@@ -947,6 +1309,12 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 
 - 未完成返回业务错误
 - 已完成返回标准化结果 DTO
+
+响应：
+
+- `200 OK`：返回 `AigcDetectionResultDto`
+- `409 Conflict`：任务未完成
+- `404 Not Found`：任务不存在或不属于当前工作区
 
 ## 11.5 重试任务
 
@@ -973,6 +1341,11 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 - 不会把一次业务动作拆成多条相似任务
 - 对首期“看最终结果”场景更直观
 
+成功响应：
+
+- `200 OK`
+- 返回最新 `AigcDetectionTaskDetail`
+
 ## 12. 异步同步策略
 
 ## 12.1 为什么不用真正后台队列
@@ -984,6 +1357,11 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 - 创建任务后立即同步一次
 - 前端详情轮询本系统任务详情接口
 - 任务详情接口内部按“过期判定”触发同步
+
+技术结论：
+
+- 该功能采用“请求驱动同步”为正式方案
+- 后续只有在并发量、排队时长、失败补偿复杂度明显提升后，才升级到独立队列
 
 ## 12.2 同步触发规则
 
@@ -1003,6 +1381,14 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 - 进程内短锁
 
 首期更建议用数据库字段或状态 CAS，避免多请求并发导致重复同步。
+
+推荐实现：
+
+- 表中增加 `syncing_until`
+- 触发同步前执行条件更新：
+  - `where id = ? and (syncing_until is null or syncing_until < now)`
+- 抢锁成功的请求负责实际同步
+- 同步完成后清空或回写新的 `syncing_until`
 
 ## 12.3 详情页轮询建议
 
@@ -1035,6 +1421,12 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 - 文件写入是否成功
 - `sha256` 是否计算成功
 
+建议追加：
+
+- `workspaceSlug` 必须可解析到当前用户有权访问的工作区
+- `taskId` 必须是合法 `ulid`
+- `page/pageSize` 必须做上限保护，避免异常分页参数拖垮 SQLite
+
 ## 13.2 错误分类
 
 建议分类：
@@ -1051,6 +1443,23 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
   - 本地任务不存在
 - `TASK_NOT_COMPLETED`
   - 结果尚未生成
+
+建议正式错误码收敛为：
+
+| HTTP Status | code | 说明 |
+| --- | --- | --- |
+| `400` | `AIGC_DETECTION_BAD_REQUEST` | 请求格式错误 |
+| `403` | `AIGC_DETECTION_FORBIDDEN` | 无工作区访问或写入权限 |
+| `404` | `AIGC_DETECTION_TASK_NOT_FOUND` | 任务不存在 |
+| `409` | `AIGC_DETECTION_TASK_NOT_COMPLETED` | 任务未完成，无法取结果 |
+| `409` | `AIGC_DETECTION_TASK_NOT_RETRYABLE` | 当前状态不可重试 |
+| `413` | `AIGC_DETECTION_FILE_TOO_LARGE` | 文件超过限制 |
+| `415` | `AIGC_DETECTION_UNSUPPORTED_FILE_TYPE` | 文件类型不支持 |
+| `422` | `AIGC_DETECTION_VALIDATION_FAILED` | 字段级业务校验失败 |
+| `500` | `AIGC_DETECTION_STORAGE_ERROR` | 本地文件或数据库操作失败 |
+| `502` | `AIGC_DETECTION_EXTERNAL_SUBMIT_FAILED` | 第三方创建任务失败 |
+| `502` | `AIGC_DETECTION_EXTERNAL_SYNC_FAILED` | 第三方状态同步失败 |
+| `500` | `AIGC_DETECTION_INTERNAL_ERROR` | 未分类服务端错误 |
 
 ## 13.3 用户可见错误文案
 
@@ -1082,6 +1491,38 @@ AIGC_DETECTION_MAX_UPLOAD_BYTES=52428800
 
 - `getAigcDetectionDataDir()`
 - `getAigcDetectionUploadDir()`
+
+## 14.4 事务与一致性要求
+
+必须遵循：
+
+- 创建任务时，“写文件 + 写本地任务记录”必须视为一个业务动作
+- 若文件已落盘但数据库写入失败，必须执行补偿删除或记录孤儿文件清理事件
+- 重试任务时，更新 `retry_count`、重置错误字段、刷新同步字段必须在单事务内完成
+- 写入结果时，`status`、`completed_at`、`result_json`、`raw_result_json` 必须在单事务内提交
+
+不得：
+
+- 先把任务标记为 `succeeded`，再异步补写 `result_json`
+- 在多个 route 中直接拼接 SQL 片段完成一次状态流转
+
+## 14.5 可观测性要求
+
+至少补充：
+
+- 结构化日志字段：`workspaceId`、`taskId`、`externalTaskId`、`requestId`、`status`
+- 关键事件日志：创建任务、提交第三方、同步状态、拉取结果、重试
+- 错误日志不得包含文件正文与原文内容
+
+## 14.6 测试要求
+
+后端实现最少应覆盖：
+
+- `validators.ts` 单元测试
+- `mapper.ts` 单元测试
+- `service.ts` 状态流转测试
+- `repository.ts` 基础 CRUD 与索引字段测试
+- Route Handler 的鉴权与错误码集成测试
 
 ## 15. 安全与合规
 
