@@ -1,5 +1,6 @@
 export type WorkspaceModule =
     | 'projects'
+    | 'aigc-detection'
     | 'aigc-rewrite'
     | 'prompt-assets'
     | 'credentials'
@@ -8,6 +9,7 @@ export type WorkspaceModule =
 
 const knownModules = new Set<WorkspaceModule>([
     'projects',
+    'aigc-detection',
     'aigc-rewrite',
     'prompt-assets',
     'credentials',

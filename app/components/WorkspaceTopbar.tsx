@@ -7,6 +7,7 @@ import {
     Blocks,
     Building2,
     ChevronDown,
+    FileSearch,
     KeyRound,
     LoaderCircle,
     LogOut,
@@ -26,6 +27,7 @@ const moduleMeta: Array<{
     icon: React.ComponentType<{ size?: number; className?: string }>;
 }> = [
     { id: 'projects', label: '项目', icon: Blocks },
+    { id: 'aigc-detection', label: 'AIGC 检测', icon: FileSearch },
     { id: 'aigc-rewrite', label: '降低 AIGC', icon: WandSparkles },
     { id: 'prompt-assets', label: '提示词资产', icon: Sparkles },
     { id: 'credentials', label: '凭证', icon: KeyRound },
