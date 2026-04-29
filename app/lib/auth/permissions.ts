@@ -2,6 +2,8 @@ export const workspacePermissions = [
     'project:read',
     'project:write',
     'project:delete',
+    'aigc_detection:read',
+    'aigc_detection:write',
     'prompt_asset:read',
     'prompt_asset:write',
     'prompt_asset:archive',
@@ -22,13 +24,15 @@ const permissionMatrix: Record<WorkspaceRole, WorkspacePermission[]> = {
     editor: [
         'project:read',
         'project:write',
+        'aigc_detection:read',
+        'aigc_detection:write',
         'prompt_asset:read',
         'prompt_asset:write',
         'credential:read_meta',
         'credential:use',
         'member:read',
     ],
-    viewer: ['project:read', 'prompt_asset:read', 'member:read'],
+    viewer: ['project:read', 'aigc_detection:read', 'prompt_asset:read', 'member:read'],
 };
 
 export function getPermissionsForRole(role: WorkspaceRole): WorkspacePermission[] {
