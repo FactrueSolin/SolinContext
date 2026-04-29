@@ -24,12 +24,14 @@ interface ContentBlockEditorProps {
     messageId: string;
     blockIndex: number;
     totalBlocks: number;
+    isGenerating?: boolean;
 }
 
 function ContentBlockEditor({
     block,
     messageId,
     blockIndex,
+    isGenerating,
 }: ContentBlockEditorProps) {
     const { updateContentBlock, deleteContentBlock } = useEditorActions();
 
@@ -51,6 +53,7 @@ function ContentBlockEditor({
                     <ThinkingBlockEditor
                         block={block}
                         onUpdate={handleUpdate}
+                        isGenerating={isGenerating}
                     />
                 );
             case 'tool_use':

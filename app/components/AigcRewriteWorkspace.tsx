@@ -199,6 +199,7 @@ export default function AigcRewriteWorkspace() {
     const [previousThinkingText, setPreviousThinkingText] = useState('');
     const abortControllerRef = useRef<AbortController | null>(null);
     const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const previousGenerationPhaseRef = useRef(draft.generationPhase);
 
     const sampleQuality = evaluateAigcRewriteSampleQuality(draft.sampleBefore, draft.sampleAfter);
     const savedSample = getSavedAigcRewriteSample(draft);
@@ -222,6 +223,14 @@ export default function AigcRewriteWorkspace() {
     const primaryActionLabel = hasVisibleResult ? '再次生成' : '开始改写';
     const thinkingPreview = getThinkingPreview(draft.thinkingText);
     const currentSampleLevel = selectedPreset ? 'ready' : sampleQuality.level;
+
+    useEffect(() => {
+        if (previousGenerationPhaseRef.current === 'streaming' && draft.generationPhase !== 'streaming') {
+            setIsThinkingExpanded(false);
+        }
+
+        previousGenerationPhaseRef.current = draft.generationPhase;
+    }, [draft.generationPhase]);
 
     useEffect(() => {
         if (!workspaceSlug) {

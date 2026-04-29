@@ -286,6 +286,7 @@ function MessageCard({ message, index, totalCount }: MessageCardProps) {
                             messageId={message.id}
                             blockIndex={i}
                             totalBlocks={message.content.length}
+                            isGenerating={message.isGenerating}
                         />
                     ))
                 )}
