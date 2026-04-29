@@ -9,8 +9,9 @@
 1. 接收论文文件上传并创建异步检测任务
 2. 提供任务状态查询接口
 3. 提供任务结果查询接口
-4. 提供已处理文件列表与按文件 `sha256` 查结果接口
-5. 通过 Rust API 调用内部 Python 推理服务完成块级与句子级检测
+4. 提供 MinerU 清洗 Markdown 与 AI 标记 Markdown 查询接口
+5. 提供已处理文件列表与按文件 `sha256` 查结果接口
+6. 通过 Rust API 调用内部 Python 推理服务完成块级与句子级检测
 
 当前对外 API 基础路径：
 
@@ -28,49 +29,53 @@ OpenAPI 文件已生成到：
 
 ## 2. 运行方式
 
-### 2.1 启动内部 Python 推理服务
+### 2.1 一键启动完整服务
 
-需要先准备模型环境变量，例如：
-
-```bash
-export QWEN35_MODEL_ID=/path/to/qwen-model
-export QWEN35_DEVICE_MAP=auto
-export QWEN35_TORCH_DTYPE=auto
-```
-
-启动命令：
+推荐把配置放进仓库根目录 `.env`，例如：
 
 ```bash
-uv run ai-text-detector-internal-api
+AIGC_BIND_ADDR=0.0.0.0:3000
+AIGC_INTERNAL_API_HOST=127.0.0.1
+AIGC_INTERNAL_API_PORT=8001
+QWEN35_MODEL_ID=/path/to/qwen-model
+AIGC_DETECTOR_PROBABILITY_MODE=token_mean
+AIGC_DETECTOR_MIN_TOKENS=25
+QWEN35_CALIBRATION_PATH=/path/to/calibrator.json
+QWEN35_DEVICE_MAP=auto
+QWEN35_TORCH_DTYPE=auto
 ```
 
-默认监听：
-
-`127.0.0.1:8001`
-
-可选环境变量：
-
-1. `AIGC_INTERNAL_API_HOST`，默认 `127.0.0.1`
-2. `AIGC_INTERNAL_API_PORT`，默认 `8001`
-
-### 2.2 启动 Rust API 服务
+然后直接启动：
 
 ```bash
 just serve-api
 ```
 
-默认监听：
+这个命令会自动完成以下步骤：
 
-`0.0.0.0:3000`
+1. 读取 `.env`
+2. 自动执行 `uv sync`，准备 Python 运行环境
+3. 启动内部 Python 推理服务
+4. 启动 Rust API 服务
 
-主要环境变量：
+默认情况下：
+
+1. 内部 Python 推理服务监听 `127.0.0.1:8001`
+2. Rust API 服务监听 `.env` 中的 `AIGC_BIND_ADDR`
+
+### 2.2 主要环境变量
 
 1. `AIGC_BIND_ADDR`，默认 `0.0.0.0:3000`
 2. `AIGC_WORKDIR`，默认 `workdir`
-3. `AIGC_DETECTOR_BASE_URL`，默认 `http://127.0.0.1:8001`
-4. `AIGC_DETECTOR_PROBABILITY_MODE`，默认 `trained`
+3. `AIGC_DETECTOR_BASE_URL`，默认跟随内部推理服务地址自动推导
+4. `AIGC_DETECTOR_PROBABILITY_MODE`，默认 `token_mean`，用于对齐 `testdata-mean-prob`
 5. `AIGC_DETECTOR_BATCH_SIZE`，默认 `16`
 6. `AIGC_MAX_UPLOAD_BYTES`，默认 `52428800`
+7. `AIGC_INTERNAL_API_HOST`，默认 `127.0.0.1`
+8. `AIGC_INTERNAL_API_PORT`，默认 `8001`
+9. `QWEN35_MODEL_ID`，内部 Python 推理服务使用的本地模型路径
+10. `AIGC_DETECTOR_MIN_TOKENS`，默认 `25`，跳过 token 数低于该阈值的段落
+11. `QWEN35_CALIBRATION_PATH`，当 `AIGC_DETECTOR_PROBABILITY_MODE=trained` 时必填
 
 ## 3. 通用约定
 
@@ -204,7 +209,9 @@ ok
   "status": "queued",
   "deduplicated": false,
   "status_url": "/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5q3q9k4p",
-  "result_url": "/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5q3q9k4p/result"
+  "result_url": "/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5q3q9k4p/result",
+  "cleaned_markdown_url": "/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5q3q9k4p/cleaned-markdown",
+  "marked_markdown_url": "/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5q3q9k4p/marked-markdown"
 }
 ```
 
@@ -274,7 +281,7 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5
   "document_result": {
     "document_ai_probability": 0.74,
     "label": "ai_likely",
-    "probability_method": "trained",
+    "probability_method": "token_mean",
     "block_count": 120,
     "scored_block_count": 118,
     "skipped_block_count": 2,
@@ -291,6 +298,27 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5
       }
     ]
   },
+  "markdown_document": {
+    "cleaned_markdown": "# 论文标题\n\n第一段内容。",
+    "marked_markdown": "# 论文标题\n\n[[AI_LIKELY]]第一段内容。[[/AI_LIKELY]]",
+    "marker_start": "[[AI_LIKELY]]",
+    "marker_end": "[[/AI_LIKELY]]",
+    "marked_ai_sentence_count": 1,
+    "unmatched_ai_sentence_count": 0,
+    "spans": [
+      {
+        "sentence_id": "s00031",
+        "block_id": "b00008",
+        "order": 31,
+        "start": 8,
+        "end": 14,
+        "text": "第一段内容。",
+        "ai_probability": 0.88,
+        "probability_method": "token_mean",
+        "matched": true
+      }
+    ]
+  },
   "ai_sentences": [
     {
       "sentence_id": "s00031",
@@ -299,7 +327,7 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5
       "text": "该方法显著提高了模型的泛化能力并在多个数据集上取得最优结果。",
       "ai_probability": 0.88,
       "label": "ai_likely",
-      "probability_method": "trained"
+      "probability_method": "token_mean"
     }
   ],
   "blocks": [
@@ -315,7 +343,7 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5
       "token_count": 5,
       "ai_probability": 0.13,
       "label": "human_likely",
-      "probability_method": "trained"
+      "probability_method": "token_mean"
     }
   ]
 }
@@ -326,8 +354,11 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5
 1. `document_result`：全文聚合结果
 2. `cleaned_document.cleaned_full_text`：清洗后的全文文本
 3. `cleaned_document.cleaned_blocks`：清洗后的块数组
-4. `ai_sentences`：经句子级复判后命中的 AI 句子
-5. `blocks`：块级检测结果
+4. `markdown_document.cleaned_markdown`：MinerU 清洗后的原文 Markdown
+5. `markdown_document.marked_markdown`：将 `ai_likely` 内容用 `[[AI_LIKELY]]...[[/AI_LIKELY]]` 标记后的 Markdown
+6. `markdown_document.spans`：标记位置与句子级检测详情；若 `matched=false`，表示该句子未能回贴到 Markdown 原文
+7. `ai_sentences`：经句子级复判后命中的 AI 句子
+8. `blocks`：块级检测结果
 
 `curl` 示例：
 
@@ -335,7 +366,79 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5
 curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5q3q9k4p/result"
 ```
 
-### 4.6 列出已处理文件
+### 4.6 查询 MinerU 清洗 Markdown
+
+`GET /api/v1/aigc-detection/tasks/{task_id}/cleaned-markdown`
+
+行为说明：
+
+1. 当任务未完成时返回 `409 TASK_NOT_FINISHED`
+2. 当任务成功时返回 MinerU 产出的 `full.md` 内容；若上传文件本身是 Markdown，则返回上传的 Markdown
+
+成功响应：
+
+状态码：`200 OK`
+
+```json
+{
+  "task_id": "task_01jv7w2n4r7n5n4g0v5q3q9k4p",
+  "status": "succeeded",
+  "markdown": "# 论文标题\n\n第一段内容。"
+}
+```
+
+`curl` 示例：
+
+```bash
+curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5q3q9k4p/cleaned-markdown"
+```
+
+### 4.7 查询 AI 标记 Markdown
+
+`GET /api/v1/aigc-detection/tasks/{task_id}/marked-markdown`
+
+行为说明：
+
+1. 当任务未完成时返回 `409 TASK_NOT_FINISHED`
+2. 服务端会把句子级判定为 `ai_likely` 的内容回贴到 Markdown，并使用 `[[AI_LIKELY]]...[[/AI_LIKELY]]` 包裹
+3. `spans[].matched=false` 表示该 AI 句子未能在 Markdown 原文中定位，通常由 Markdown 格式符号或清洗归一化差异导致
+
+成功响应：
+
+状态码：`200 OK`
+
+```json
+{
+  "task_id": "task_01jv7w2n4r7n5n4g0v5q3q9k4p",
+  "status": "succeeded",
+  "markdown": "# 论文标题\n\n[[AI_LIKELY]]第一段内容。[[/AI_LIKELY]]",
+  "marker_start": "[[AI_LIKELY]]",
+  "marker_end": "[[/AI_LIKELY]]",
+  "marked_ai_sentence_count": 1,
+  "unmatched_ai_sentence_count": 0,
+  "spans": [
+    {
+      "sentence_id": "s00031",
+      "block_id": "b00008",
+      "order": 31,
+      "start": 8,
+      "end": 14,
+      "text": "第一段内容。",
+      "ai_probability": 0.88,
+      "probability_method": "token_mean",
+      "matched": true
+    }
+  ]
+}
+```
+
+`curl` 示例：
+
+```bash
+curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5q3q9k4p/marked-markdown"
+```
+
+### 4.8 列出已处理文件
 
 `GET /api/v1/aigc-detection/files`
 
@@ -376,7 +479,7 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5
 curl "http://127.0.0.1:3000/api/v1/aigc-detection/files?page=1&page_size=20&status=succeeded"
 ```
 
-### 4.7 按文件 `sha256` 查询结果
+### 4.9 按文件 `sha256` 查询结果
 
 `GET /api/v1/aigc-detection/files/{sha256}/result`
 
@@ -401,7 +504,7 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/files/2e7d2c03a9507ae265ecf5b5
 
 1. `document_ai_probability`：全文 AIGC 概率
 2. `label`：`ai_likely` 或 `human_likely`
-3. `probability_method`：当前默认 `trained`
+3. `probability_method`：当前默认 `token_mean`
 4. `block_count`：总块数
 5. `scored_block_count`：成功评分块数
 6. `skipped_block_count`：未评分块数
@@ -410,7 +513,7 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/files/2e7d2c03a9507ae265ecf5b5
 
 聚合方式：
 
-当前实现按 `token_count` 加权块级概率得到全文概率。
+当前实现对齐 `just testdata-mean-prob`：先跳过 token 数小于 `AIGC_DETECTOR_MIN_TOKENS` 的段落，再用 `ai_likely` 段落的 token 数除以已处理 token 总数得到全文 AIGC 率。
 
 ### 5.2 块结果 `blocks`
 
@@ -449,6 +552,18 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/files/2e7d2c03a9507ae265ecf5b5
 1. 句子由服务端基于标点进行切分
 2. 只返回判定为 `ai_likely` 的句子
 
+### 5.4 Markdown 结果 `markdown_document`
+
+字段：
+
+1. `cleaned_markdown`：MinerU 清洗后的 Markdown 原文
+2. `marked_markdown`：已用 `marker_start` / `marker_end` 标记 AI 命中内容的 Markdown
+3. `marker_start`：默认 `[[AI_LIKELY]]`
+4. `marker_end`：默认 `[[/AI_LIKELY]]`
+5. `marked_ai_sentence_count`：成功回贴并标记的 AI 句子数
+6. `unmatched_ai_sentence_count`：未能回贴到 Markdown 原文的 AI 句子数
+7. `spans`：每个 AI 句子的标记位置、概率和匹配状态
+
 ## 6. 当前实现限制
 
 这部分很重要，避免文档和代码行为不一致。
@@ -459,7 +574,8 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/files/2e7d2c03a9507ae265ecf5b5
 2. 本地文件系统持久化
 3. `sha256` 结果复用
 4. `Idempotency-Key` 幂等控制
-5. OpenAPI JSON 与 Swagger UI
+5. MinerU 清洗 Markdown 与 AI 标记 Markdown 查询接口
+6. OpenAPI JSON 与 Swagger UI
 
 当前未实现或仅预留：
 
@@ -475,7 +591,9 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/files/2e7d2c03a9507ae265ecf5b5
 1. 调用 `POST /api/v1/aigc-detection/tasks` 创建任务
 2. 轮询 `GET /api/v1/aigc-detection/tasks/{task_id}` 直到状态为 `succeeded` 或 `failed`
 3. 成功后调用 `GET /api/v1/aigc-detection/tasks/{task_id}/result` 读取完整结果
-4. 对重复文件，可直接使用 `GET /api/v1/aigc-detection/files/{sha256}/result`
+4. 如需原文 Markdown，调用 `GET /api/v1/aigc-detection/tasks/{task_id}/cleaned-markdown`
+5. 如需 AI 标记 Markdown，调用 `GET /api/v1/aigc-detection/tasks/{task_id}/marked-markdown`
+6. 对重复文件，可直接使用 `GET /api/v1/aigc-detection/files/{sha256}/result`
 
 ## 8. 相关文件
 

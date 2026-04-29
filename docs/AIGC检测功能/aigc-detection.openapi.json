@@ -261,6 +261,108 @@
         }
       }
     },
+    "/api/v1/aigc-detection/tasks/{task_id}/cleaned-markdown": {
+      "get": {
+        "tags": [
+          "AIGC Detection"
+        ],
+        "operationId": "get_task_cleaned_markdown",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "description": "Task id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cleaned markdown produced by MinerU",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanedMarkdownResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Task not finished",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/aigc-detection/tasks/{task_id}/marked-markdown": {
+      "get": {
+        "tags": [
+          "AIGC Detection"
+        ],
+        "operationId": "get_task_marked_markdown",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "description": "Task id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Cleaned markdown with ai_likely spans marked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkedMarkdownResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Task not finished",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/aigc-detection/tasks/{task_id}/result": {
       "get": {
         "tags": [
@@ -392,6 +494,25 @@
           }
         }
       },
+      "CleanedMarkdownResponse": {
+        "type": "object",
+        "required": [
+          "task_id",
+          "status",
+          "markdown"
+        ],
+        "properties": {
+          "markdown": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        }
+      },
       "CreateTaskResponse": {
         "type": "object",
         "required": [
@@ -399,11 +520,19 @@
           "status",
           "deduplicated",
           "status_url",
-          "result_url"
+          "result_url",
+          "cleaned_markdown_url",
+          "marked_markdown_url"
         ],
         "properties": {
+          "cleaned_markdown_url": {
+            "type": "string"
+          },
           "deduplicated": {
             "type": "boolean"
+          },
+          "marked_markdown_url": {
+            "type": "string"
           },
           "result_url": {
             "type": "string"
@@ -626,6 +755,138 @@
           }
         }
       },
+      "MarkdownDocument": {
+        "type": "object",
+        "required": [
+          "cleaned_markdown",
+          "marked_markdown",
+          "marker_start",
+          "marker_end",
+          "marked_ai_sentence_count",
+          "unmatched_ai_sentence_count",
+          "spans"
+        ],
+        "properties": {
+          "cleaned_markdown": {
+            "type": "string"
+          },
+          "marked_ai_sentence_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "marked_markdown": {
+            "type": "string"
+          },
+          "marker_end": {
+            "type": "string"
+          },
+          "marker_start": {
+            "type": "string"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarkedMarkdownSpan"
+            }
+          },
+          "unmatched_ai_sentence_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "MarkedMarkdownResponse": {
+        "type": "object",
+        "required": [
+          "task_id",
+          "status",
+          "markdown",
+          "marker_start",
+          "marker_end",
+          "marked_ai_sentence_count",
+          "unmatched_ai_sentence_count",
+          "spans"
+        ],
+        "properties": {
+          "markdown": {
+            "type": "string"
+          },
+          "marked_ai_sentence_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "marker_end": {
+            "type": "string"
+          },
+          "marker_start": {
+            "type": "string"
+          },
+          "spans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarkedMarkdownSpan"
+            }
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "task_id": {
+            "type": "string"
+          },
+          "unmatched_ai_sentence_count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "MarkedMarkdownSpan": {
+        "type": "object",
+        "required": [
+          "sentence_id",
+          "block_id",
+          "order",
+          "start",
+          "end",
+          "text",
+          "ai_probability",
+          "probability_method",
+          "matched"
+        ],
+        "properties": {
+          "ai_probability": {
+            "type": "number",
+            "format": "double"
+          },
+          "block_id": {
+            "type": "string"
+          },
+          "end": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "matched": {
+            "type": "boolean"
+          },
+          "order": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "probability_method": {
+            "type": "string"
+          },
+          "sentence_id": {
+            "type": "string"
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
       "ProcessedFileEntry": {
         "type": "object",
         "required": [
@@ -831,6 +1092,9 @@
           },
           "document_result": {
             "$ref": "#/components/schemas/DocumentResultSummary"
+          },
+          "markdown_document": {
+            "$ref": "#/components/schemas/MarkdownDocument"
           },
           "status": {
             "$ref": "#/components/schemas/TaskStatus"
