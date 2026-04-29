@@ -23,12 +23,6 @@ export const metadata: Metadata = {
     "流式生成",
     "A/B 对比",
   ],
-  icons: {
-    icon: [
-      { url: "/icon.png", type: "image/png" },
-      { url: "/favicon.ico", type: "image/x-icon" },
-    ],
-  },
   openGraph: {
     title: "AI Context Editor - 可视化编辑 AI 上下文",
     description:
