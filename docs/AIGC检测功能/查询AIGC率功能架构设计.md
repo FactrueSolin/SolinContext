@@ -690,72 +690,74 @@ app/
 
 ## 7. 数据模型设计
 
-建议至少新增两张表。
+首期建议采用“任务主表 + 事件表”的双表方案，并在任务主表中内聚文件元数据、外部任务映射、结果快照与错误上下文。
+
+这样设计的原因是：
+
+- 当前核心查询维度是“工作区下有哪些任务、状态如何、结果是否完成”
+- 结果主要用于单任务详情展示，暂无复杂跨任务统计分析需求
+- 外部返回结构后续可能演进，首期需要兼顾灵活性与可维护性
+- SQLite 更适合减少联表数量，把高频读取路径压缩到单表
+
+数据库命名建议：
+
+- 统一使用 `aigc_detection_*`
+- 时间字段统一使用 `integer` 保存 Unix epoch ms
+- JSON 统一使用 SQLite `text` 存储，服务层做 schema 校验
+- 主键统一使用 `text` 类型承载 `ulid`
+
+## 7.0 总体结论
+
+建议新增以下两张表：
+
+1. `aigc_detection_tasks`
+   - 存任务主记录，也是列表页、详情页、重试入口的核心表
+2. `aigc_detection_task_events`
+   - 存异步链路事件与调试上下文，用于排障、审计、补偿
+
+首期不额外拆 `result` 明细表，但要在 `aigc_detection_tasks` 中预留结构化摘要字段，避免列表页完全依赖 JSON 解析。
 
 ## 7.1 `aigc_detection_tasks`
 
-用途：记录本地业务任务。
+用途：记录本地业务任务，并承载列表页和详情页的主要读取模型。
 
-建议字段：
+### 7.1.1 字段定义
 
-- `id`
-  - 本地任务 ID，主键，`ulid`
-- `workspace_id`
-  - 所属工作区
-- `created_by`
-  - 创建用户
-- `updated_by`
-  - 最近更新用户，可为空
-- `source_file_name`
-  - 原始文件名
-- `source_file_ext`
-  - 文件扩展名，限定 `pdf | doc | docx`
-- `source_mime_type`
-  - 上传时识别出的 MIME
-- `source_file_size`
-  - 文件大小，字节
-- `source_file_sha256`
-  - 文件哈希
-- `storage_path`
-  - 本地缓存绝对或相对路径
-- `storage_status`
-  - `active | deleted`
-- `external_task_id`
-  - 外部服务返回的任务 ID
-- `external_status`
-  - 外部任务状态镜像
-- `status`
-  - 本地统一状态
-- `progress_current`
-  - 当前进度
-- `progress_total`
-  - 总进度
-- `progress_unit`
-  - 进度单位，例如 `blocks`
-- `deduplicated`
-  - 是否命中外部去重
-- `idempotency_key`
-  - 提交第三方时使用的幂等键
-- `result_json`
-  - 标准化结果 JSON
-- `raw_result_json`
-  - 外部原始结果 JSON
-- `error_code`
-  - 业务或外部错误码
-- `error_message`
-  - 错误信息
-- `submitted_at`
-  - 提交到外部时间
-- `completed_at`
-  - 完成时间
-- `last_synced_at`
-  - 最近同步外部状态时间
-- `retry_count`
-  - 重试次数
-- `created_at`
-  - 创建时间
-- `updated_at`
-  - 更新时间
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `text` | PK | 本地任务 ID，`ulid` |
+| `workspace_id` | `text` | NOT NULL | 所属工作区 ID |
+| `created_by` | `text` | NOT NULL | 创建用户 ID |
+| `updated_by` | `text` | NULL | 最近更新用户 ID；系统轮询更新时可为空 |
+| `status` | `text` | NOT NULL | 本地统一状态 |
+| `external_task_id` | `text` | NULL, UNIQUE | 外部服务任务 ID |
+| `external_status` | `text` | NULL | 外部任务状态镜像 |
+| `source_file_name` | `text` | NOT NULL | 用户上传的原始文件名 |
+| `source_file_ext` | `text` | NOT NULL | `pdf/doc/docx` |
+| `source_mime_type` | `text` | NOT NULL | 上传时识别到的 MIME |
+| `source_file_size` | `integer` | NOT NULL | 文件大小，字节 |
+| `source_file_sha256` | `text` | NOT NULL | 文件 SHA-256，64 位小写十六进制 |
+| `storage_path` | `text` | NOT NULL | 相对 `data/` 的相对路径 |
+| `storage_status` | `text` | NOT NULL DEFAULT `'active'` | 本地缓存状态 |
+| `idempotency_key` | `text` | NOT NULL | 发送第三方请求使用的幂等键 |
+| `deduplicated` | `integer` | NOT NULL DEFAULT 0 | 是否命中历史复用或第三方去重；0/1 |
+| `progress_current` | `integer` | NULL | 当前进度值 |
+| `progress_total` | `integer` | NULL | 总进度值 |
+| `progress_unit` | `text` | NULL | 进度单位，例如 `blocks` |
+| `result_overall_score` | `real` | NULL | 全文 AIGC 率，0 到 1 |
+| `result_human_score` | `real` | NULL | 全文人工概率，0 到 1；外部未返回则为空 |
+| `result_summary` | `text` | NULL | 面向 UI 的结果摘要 |
+| `result_json` | `text` | NULL | 标准化结果 JSON |
+| `raw_result_json` | `text` | NULL | 外部原始结果 JSON |
+| `error_code` | `text` | NULL | 业务或外部错误码 |
+| `error_message` | `text` | NULL | 最近一次错误摘要 |
+| `submitted_at` | `integer` | NULL | 成功提交第三方时间 |
+| `completed_at` | `integer` | NULL | 成功或失败终态时间 |
+| `last_synced_at` | `integer` | NULL | 最近一次第三方状态同步时间 |
+| `last_sync_error_at` | `integer` | NULL | 最近一次同步失败时间 |
+| `retry_count` | `integer` | NOT NULL DEFAULT 0 | 显式重试次数 |
+| `created_at` | `integer` | NOT NULL | 创建时间 |
+| `updated_at` | `integer` | NOT NULL | 更新时间 |
 
 建议本地状态枚举：
 
@@ -772,6 +774,10 @@ app/
 - `failed`
   - 已失败
 
+### 7.1.2 查询设计与索引
+
+列表页、详情页、轮询同步三类访问路径不同，因此索引需要围绕真实查询建立，而不是只按字段名平均分配。
+
 建议索引：
 
 - `(workspace_id, created_at desc)`
@@ -780,44 +786,261 @@ app/
 - `(external_task_id)`
 - `(created_by, created_at desc)`
 
-建议补充约束：
+建议补充索引：
+
+- `(workspace_id, source_file_sha256, status, created_at desc)`
+  - 用于同工作区内哈希复用和排查
+- `(status, last_synced_at)`
+  - 用于后台扫描需要同步的进行中任务
+- `(workspace_id, source_file_name)`
+  - 用于列表页按文件名搜索时的前缀或模糊过滤
+- `(completed_at desc)`
+  - 便于后台清理或归档任务
+
+### 7.1.3 约束设计
 
 - 主键：`id` 唯一
 - 唯一索引：`external_task_id` 在非空时应唯一
 - 非唯一索引：`(workspace_id, source_file_sha256)`，用于本地哈希复用和排查
 - `status`、`storage_status`、`source_file_ext` 必须采用受限枚举，不允许自由文本
-- `result_json`、`raw_result_json`、`payload_json` 使用 SQLite `text` 存 JSON 字符串，进入服务层后再做严格类型解析
+- `source_file_sha256` 必须满足固定长度与字符集约束
+- `source_file_size`、`retry_count`、`progress_current`、`progress_total` 必须为非负整数
+- `result_overall_score`、`result_human_score` 若非空，必须在 `0` 到 `1` 区间
+- `submitted_at >= created_at`
+- `completed_at >= submitted_at`
+- `updated_at >= created_at`
+- `result_json`、`raw_result_json` 使用 SQLite `text` 存 JSON 字符串，进入服务层后再做严格类型解析
+
+### 7.1.4 推荐 DDL 草案
+
+```sql
+create table aigc_detection_tasks (
+  id text primary key not null,
+  workspace_id text not null,
+  created_by text not null,
+  updated_by text,
+  status text not null,
+  external_task_id text unique,
+  external_status text,
+  source_file_name text not null,
+  source_file_ext text not null,
+  source_mime_type text not null,
+  source_file_size integer not null,
+  source_file_sha256 text not null,
+  storage_path text not null,
+  storage_status text not null default 'active',
+  idempotency_key text not null,
+  deduplicated integer not null default 0,
+  progress_current integer,
+  progress_total integer,
+  progress_unit text,
+  result_overall_score real,
+  result_human_score real,
+  result_summary text,
+  result_json text,
+  raw_result_json text,
+  error_code text,
+  error_message text,
+  submitted_at integer,
+  completed_at integer,
+  last_synced_at integer,
+  last_sync_error_at integer,
+  retry_count integer not null default 0,
+  created_at integer not null,
+  updated_at integer not null,
+  constraint ck_aigc_detection_tasks_status
+    check (status in ('queued_local', 'submit_failed', 'submitted', 'processing', 'succeeded', 'failed')),
+  constraint ck_aigc_detection_tasks_storage_status
+    check (storage_status in ('active', 'deleted')),
+  constraint ck_aigc_detection_tasks_source_file_ext
+    check (source_file_ext in ('pdf', 'doc', 'docx')),
+  constraint ck_aigc_detection_tasks_sha256
+    check (length(source_file_sha256) = 64),
+  constraint ck_aigc_detection_tasks_source_file_size
+    check (source_file_size >= 0),
+  constraint ck_aigc_detection_tasks_retry_count
+    check (retry_count >= 0),
+  constraint ck_aigc_detection_tasks_progress_current
+    check (progress_current is null or progress_current >= 0),
+  constraint ck_aigc_detection_tasks_progress_total
+    check (progress_total is null or progress_total >= 0),
+  constraint ck_aigc_detection_tasks_progress_pair
+    check (
+      (progress_current is null and progress_total is null)
+      or (progress_current is not null and progress_total is not null and progress_current <= progress_total)
+    ),
+  constraint ck_aigc_detection_tasks_result_overall_score
+    check (result_overall_score is null or (result_overall_score >= 0 and result_overall_score <= 1)),
+  constraint ck_aigc_detection_tasks_result_human_score
+    check (result_human_score is null or (result_human_score >= 0 and result_human_score <= 1)),
+  constraint ck_aigc_detection_tasks_deduplicated
+    check (deduplicated in (0, 1)),
+  constraint ck_aigc_detection_tasks_submitted_at
+    check (submitted_at is null or submitted_at >= created_at),
+  constraint ck_aigc_detection_tasks_completed_at
+    check (
+      completed_at is null
+      or submitted_at is null
+      or completed_at >= submitted_at
+    ),
+  constraint ck_aigc_detection_tasks_updated_at
+    check (updated_at >= created_at),
+  constraint ck_aigc_detection_tasks_result_json
+    check (result_json is null or json_valid(result_json)),
+  constraint ck_aigc_detection_tasks_raw_result_json
+    check (raw_result_json is null or json_valid(raw_result_json))
+);
+
+create index idx_aigc_detection_tasks_workspace_created_at
+  on aigc_detection_tasks(workspace_id, created_at desc);
+
+create index idx_aigc_detection_tasks_workspace_status_updated_at
+  on aigc_detection_tasks(workspace_id, status, updated_at desc);
+
+create index idx_aigc_detection_tasks_sha256
+  on aigc_detection_tasks(source_file_sha256);
+
+create index idx_aigc_detection_tasks_workspace_sha256_status_created_at
+  on aigc_detection_tasks(workspace_id, source_file_sha256, status, created_at desc);
+
+create index idx_aigc_detection_tasks_status_last_synced_at
+  on aigc_detection_tasks(status, last_synced_at);
+
+create index idx_aigc_detection_tasks_created_by_created_at
+  on aigc_detection_tasks(created_by, created_at desc);
+```
+
+说明：
+
+- `result_overall_score`、`result_summary` 直接落结构化列，是为了让列表页展示结果无需反复解析 `result_json`
+- `deduplicated` 统一表示“命中复用路径”，既可来自本地成功结果复用，也可来自第三方按哈希去重
+- `updated_by` 在系统后台轮询场景允许为空，避免伪造“用户更新人”
 
 ## 7.2 `aigc_detection_task_events`
 
 用途：记录状态流转与调试事件，避免后续排障只能看最终状态。
 
-建议字段：
+### 7.2.1 字段定义
 
-- `id`
-- `task_id`
-- `workspace_id`
-- `event_type`
-  - 例如 `file_saved`、`submitted`、`sync_status`、`sync_result`、`retry`
-- `payload_json`
-- `created_by`
-- `created_at`
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `text` | PK | 事件 ID，`ulid` |
+| `task_id` | `text` | NOT NULL, FK | 对应本地任务 ID |
+| `workspace_id` | `text` | NOT NULL | 冗余存储，便于按工作区审计 |
+| `event_type` | `text` | NOT NULL | 事件类型 |
+| `from_status` | `text` | NULL | 流转前状态 |
+| `to_status` | `text` | NULL | 流转后状态 |
+| `payload_json` | `text` | NULL | 结构化上下文 |
+| `operator_type` | `text` | NOT NULL | `user/system` |
+| `created_by` | `text` | NULL | 用户触发时记录用户 ID，系统任务可为空 |
+| `created_at` | `integer` | NOT NULL | 事件时间 |
+
+### 7.2.2 事件类型建议
+
+建议约束为受控枚举，至少包括：
+
+- `task_created`
+- `file_saved`
+- `submit_requested`
+- `submit_succeeded`
+- `submit_failed`
+- `status_synced`
+- `result_synced`
+- `sync_failed`
+- `retry_requested`
+- `retry_submitted`
+- `storage_deleted`
+
+### 7.2.3 推荐 DDL 草案
+
+```sql
+create table aigc_detection_task_events (
+  id text primary key not null,
+  task_id text not null,
+  workspace_id text not null,
+  event_type text not null,
+  from_status text,
+  to_status text,
+  payload_json text,
+  operator_type text not null,
+  created_by text,
+  created_at integer not null,
+  foreign key (task_id) references aigc_detection_tasks(id) on delete cascade,
+  constraint ck_aigc_detection_task_events_event_type
+    check (
+      event_type in (
+        'task_created',
+        'file_saved',
+        'submit_requested',
+        'submit_succeeded',
+        'submit_failed',
+        'status_synced',
+        'result_synced',
+        'sync_failed',
+        'retry_requested',
+        'retry_submitted',
+        'storage_deleted'
+      )
+    ),
+  constraint ck_aigc_detection_task_events_operator_type
+    check (operator_type in ('user', 'system')),
+  constraint ck_aigc_detection_task_events_payload_json
+    check (payload_json is null or json_valid(payload_json))
+);
+
+create index idx_aigc_detection_task_events_task_created_at
+  on aigc_detection_task_events(task_id, created_at desc);
+
+create index idx_aigc_detection_task_events_workspace_created_at
+  on aigc_detection_task_events(workspace_id, created_at desc);
+
+create index idx_aigc_detection_task_events_event_type_created_at
+  on aigc_detection_task_events(event_type, created_at desc);
+```
 
 这张表不是首期硬性必需，但强烈建议保留。异步任务链路如果没有事件表，后续很难排查“为何失败”“何时同步过”“外部返回过什么”。
 
 ## 7.3 是否拆分结果表
 
-首期不建议额外拆出 `aigc_detection_results`。
+首期不建议额外拆出 `aigc_detection_results` 或句级明细表。
 
 原因：
 
 - 当前结果来源完全依赖外部服务
 - 首期更关注任务状态跑通
 - 结果 JSON 结构未来可能调整，直接存 `result_json` 更灵活
+- 列表页只需要 `result_overall_score`、`result_summary` 等少量摘要字段
+- 若把句级、段级结果拆表，会显著增加写放大、迁移复杂度与查询面
 
 后续如果需要做结果搜索、统计聚合、句子级筛选，再考虑结果明细表拆分。
 
-## 7.4 状态机与流转约束
+未来如需拆分，建议优先新增：
+
+- `aigc_detection_result_segments`
+- `aigc_detection_result_sentences`
+
+而不是在首期提前建设高复杂度范式模型。
+
+## 7.4 哈希复用与唯一性策略
+
+`source_file_sha256` 是本功能后续性能优化的关键字段，但不能错误设计成全局唯一。
+
+建议原则：
+
+- 不对 `source_file_sha256` 做全局唯一约束
+- 允许同一文件在不同工作区、不同时间形成多条任务记录
+- “是否复用已有结果”是服务层策略，不是数据库唯一性策略
+
+推荐复用判定顺序：
+
+1. 查询当前工作区内最近一条 `status = 'succeeded'` 且 `source_file_sha256` 相同的任务
+2. 若启用跨工作区复用策略，再查询全局最近成功任务
+3. 若本地没有命中，再查询第三方 `GET /files/{sha256}/result`
+4. 若仍未命中，再走正常上传提交流程
+
+这样可以避免数据库层把业务策略写死，同时保留清晰的审计链路。
+
+## 7.5 状态机与流转约束
 
 本地任务状态机必须固定，避免实现阶段各处自行定义：
 
@@ -857,6 +1080,67 @@ submit_failed | failed
 - `succeeded` 后禁止再次同步覆盖已落库结果，除非走显式重试
 - `submit_failed` / `failed` 之外的状态不得执行重试
 - 状态流转必须由 `service.ts` 或 `sync.ts` 统一执行，route/repository 不得私自更新
+- 每次状态变化都应同时写入 `aigc_detection_task_events`
+- `submitted` 起必须保证 `external_task_id` 非空
+- `succeeded` 起必须保证 `result_json`、`result_overall_score`、`completed_at` 已写入
+- `failed` 终态必须至少具备 `error_code` 或 `error_message` 之一
+
+## 7.6 核心读写路径与事务要求
+
+为避免“数据库记录和文件状态不一致”或“本地任务已创建但状态不完整”，建议按以下边界组织事务。
+
+### 7.6.1 创建任务
+
+步骤：
+
+1. 生成 `taskId`
+2. 落盘原文件
+3. 计算 `sha256`
+4. 开启数据库事务
+5. 插入 `aigc_detection_tasks`
+6. 插入 `task_created`、`file_saved` 事件
+7. 提交事务
+8. 事务外调用第三方创建任务
+9. 再开启短事务回写 `external_task_id`、`status`、`submitted_at`
+
+原因：
+
+- 文件写入不应放进数据库事务
+- 第三方网络调用不应长时间占用 SQLite 写锁
+- 本地任务必须先持久化，第三方调用失败时才能保留 `submit_failed` 可重试记录
+
+### 7.6.2 状态同步
+
+步骤：
+
+1. 查询 `status in ('submitted', 'processing')` 的任务
+2. 拉取第三方状态
+3. 若仍处理中，仅更新状态镜像、进度、`last_synced_at`
+4. 若已成功，再拉取结果并在单事务中写入：
+   - `status = 'succeeded'`
+   - `external_status`
+   - `result_overall_score`
+   - `result_human_score`
+   - `result_summary`
+   - `result_json`
+   - `raw_result_json`
+   - `completed_at`
+   - 事件表
+5. 若失败，则在单事务中写入终态错误信息与事件
+
+### 7.6.3 重试任务
+
+重试建议复用同一条任务记录，不新建任务主记录，但要刷新外部映射和结果字段：
+
+- `status` 置回 `submitted`
+- 清空旧 `external_task_id`
+- 清空 `result_*`
+- 清空 `raw_result_json`
+- 清空 `completed_at`
+- `retry_count + 1`
+- 写入 `retry_requested`、`retry_submitted` 事件
+
+这样可以让任务详情页保持稳定 URL，也能明确看到一个任务的完整失败与重试历史。
 
 ## 8. 本地文件缓存设计
 
