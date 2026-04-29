@@ -7,6 +7,7 @@ import {
     AlertCircle,
     ArrowLeft,
     FileSearch,
+    FileText,
     LoaderCircle,
     RefreshCw,
     Search,
@@ -17,6 +18,7 @@ import {
 import {
     AigcDetectionApiError,
     createAigcDetectionTask,
+    detectAigcText,
     getAigcDetectionMarkedMarkdown,
     getAigcDetectionTaskDetail,
     getAigcDetectionTaskResult,
@@ -30,6 +32,7 @@ import type {
     AigcDetectionTaskDetail,
     AigcDetectionTaskStatus,
     AigcDetectionTaskSummary,
+    AigcDetectionTextDetectionDto,
 } from '../lib/aigc-detection/dto';
 import { getCurrentSession } from '../lib/workspaces/client';
 import { buildWorkspaceModulePath } from '../lib/workspace-routing';
@@ -312,6 +315,149 @@ function UploadModal({
     );
 }
 
+function TextDetectionPanel({
+    workspaceSlug,
+    canDetect,
+    permissionHint,
+}: {
+    workspaceSlug: string;
+    canDetect: boolean;
+    permissionHint: string | null;
+}) {
+    const [text, setText] = useState('');
+    const [minTokens, setMinTokens] = useState('0');
+    const [result, setResult] = useState<AigcDetectionTextDetectionDto | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    async function handleSubmit() {
+        if (!canDetect) {
+            setError(permissionHint ?? '当前工作区没有文本检测权限。');
+            return;
+        }
+
+        const trimmedText = text.trim();
+        if (!trimmedText) {
+            setError('请输入需要检测的文本。');
+            return;
+        }
+
+        const normalizedMinTokens = minTokens.trim() === '' ? 0 : Number(minTokens);
+        if (!Number.isInteger(normalizedMinTokens) || normalizedMinTokens < 0) {
+            setError('最小 token 数需要是非负整数。');
+            return;
+        }
+
+        setIsSubmitting(true);
+        setError(null);
+
+        try {
+            const data = await detectAigcText(workspaceSlug, {
+                text: trimmedText,
+                minTokens: normalizedMinTokens,
+            });
+            setResult(data);
+        } catch (submitError) {
+            setError(getTaskErrorMessage(submitError, '文本检测失败，请稍后重试。'));
+        } finally {
+            setIsSubmitting(false);
+        }
+    }
+
+    const riskLevel = getRiskLevel(result?.aiProbability ?? null);
+
+    return (
+        <section className="mt-6 rounded-[30px] border border-white/70 bg-white/85 p-5 shadow-[0_24px_64px_-52px_rgba(15,23,42,0.5)] backdrop-blur">
+            <div className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+                <div>
+                    <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                        <FileText size={15} />
+                        Text Check
+                    </div>
+                    <h2 className="mt-2 text-xl font-semibold text-slate-950">句子/短文本 AIGC 检测</h2>
+                    <div className="mt-4">
+                        <textarea
+                            value={text}
+                            onChange={(event) => setText(event.target.value)}
+                            rows={7}
+                            placeholder="粘贴一个句子或一小段需要检测的正文"
+                            className="min-h-44 w-full resize-y rounded-[22px] border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm leading-7 text-slate-800 outline-none focus:border-cyan-400 focus:bg-white"
+                            disabled={isSubmitting}
+                        />
+                    </div>
+                    <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                        <label className="text-sm text-slate-600">
+                            <span className="block text-xs font-medium uppercase tracking-[0.14em] text-slate-400">
+                                最小 token 数
+                            </span>
+                            <input
+                                type="number"
+                                min={0}
+                                step={1}
+                                value={minTokens}
+                                onChange={(event) => setMinTokens(event.target.value)}
+                                className="mt-1 w-36 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 outline-none focus:border-cyan-400"
+                                disabled={isSubmitting}
+                            />
+                        </label>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                void handleSubmit();
+                            }}
+                            disabled={!canDetect || isSubmitting}
+                            className="inline-flex items-center justify-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                            {isSubmitting ? <LoaderCircle size={15} className="animate-spin" /> : <FileText size={15} />}
+                            {isSubmitting ? '正在检测' : '检测这段文本'}
+                        </button>
+                    </div>
+                    {error ? (
+                        <div className="mt-4 flex items-start gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                            <AlertCircle size={16} className="mt-0.5 shrink-0" />
+                            <span>{error}</span>
+                        </div>
+                    ) : null}
+                </div>
+
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-5">
+                    <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">即时结果</div>
+                    {result ? (
+                        <div className="mt-5">
+                            <div className="flex flex-wrap items-center gap-3">
+                                <div className="text-5xl font-semibold tracking-tight text-slate-950">
+                                    {formatPercent(result.aiProbability)}
+                                </div>
+                                <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${getRiskBadgeClass(riskLevel)}`}>
+                                    {result.skipped ? '已跳过' : result.label}
+                                </span>
+                            </div>
+                            <dl className="mt-5 grid gap-3 text-sm text-slate-600 sm:grid-cols-2">
+                                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                                    <dt className="text-xs uppercase tracking-[0.14em] text-slate-400">Token</dt>
+                                    <dd className="mt-1 font-semibold text-slate-900">{result.tokenCount}</dd>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                                    <dt className="text-xs uppercase tracking-[0.14em] text-slate-400">字符数</dt>
+                                    <dd className="mt-1 font-semibold text-slate-900">{result.charCount}</dd>
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 sm:col-span-2">
+                                    <dt className="text-xs uppercase tracking-[0.14em] text-slate-400">概率方法</dt>
+                                    <dd className="mt-1 font-semibold text-slate-900">{result.probabilityMethod}</dd>
+                                </div>
+                            </dl>
+                        </div>
+                    ) : (
+                        <div className="mt-5 rounded-[22px] border border-dashed border-slate-300 bg-white/70 px-4 py-10 text-sm leading-7 text-slate-500">
+                            检测结果会在这里直接返回，不会创建文件任务。
+                        </div>
+                    )}
+                </div>
+            </div>
+        </section>
+    );
+}
+
 function TaskListPage({ workspaceSlug }: { workspaceSlug: string }) {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -545,6 +691,41 @@ function TaskListPage({ workspaceSlug }: { workspaceSlug: string }) {
                     </div>
                 ) : null}
             </section>
+
+            <section className="mt-6 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+                <article className="rounded-[28px] border border-cyan-100 bg-cyan-50/80 p-5 shadow-[0_24px_64px_-52px_rgba(15,23,42,0.5)]">
+                    <div className="text-xs font-medium uppercase tracking-[0.16em] text-cyan-700">使用说明</div>
+                    <div className="mt-4 grid gap-3 text-sm leading-7 text-slate-700 sm:grid-cols-2">
+                        <div className="rounded-[20px] border border-white/70 bg-white/75 px-4 py-3">
+                            <div className="font-semibold text-slate-950">整篇文章检测</div>
+                            <p className="mt-1 text-slate-600">
+                                使用上传文件功能提交 pdf、doc 或 docx，系统会创建任务并返回全文 AIGC 率、分段明细和原文高亮。
+                            </p>
+                        </div>
+                        <div className="rounded-[20px] border border-white/70 bg-white/75 px-4 py-3">
+                            <div className="font-semibold text-slate-950">单句检测</div>
+                            <p className="mt-1 text-slate-600">
+                                使用下方句子/短文本检测框粘贴一个句子或一小段文字，结果会同步返回，不会创建检测任务。
+                            </p>
+                        </div>
+                    </div>
+                </article>
+
+                <article className="rounded-[28px] border border-amber-200 bg-amber-50/85 p-5 shadow-[0_24px_64px_-52px_rgba(15,23,42,0.5)]">
+                    <div className="text-xs font-medium uppercase tracking-[0.16em] text-amber-800">检测局限性</div>
+                    <ul className="mt-4 space-y-2 text-sm leading-7 text-amber-900">
+                        <li>当前检测结果的 AI 率可能明显高于知网等平台。</li>
+                        <li>当前算法仍不够严谨，无法作为确定性判定依据。</li>
+                        <li>检测结果仅供参考，请结合人工审阅和上下文综合判断。</li>
+                    </ul>
+                </article>
+            </section>
+
+            <TextDetectionPanel
+                workspaceSlug={workspaceSlug}
+                canDetect={canUpload}
+                permissionHint={permissionHint}
+            />
 
             <section className="mt-6 rounded-[30px] border border-white/70 bg-white/80 p-4 shadow-[0_24px_64px_-52px_rgba(15,23,42,0.5)] backdrop-blur sm:p-5">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

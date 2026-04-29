@@ -69,6 +69,22 @@ export interface AigcDetectionMarkdownDocumentDto {
     spans: AigcDetectionMarkedMarkdownSpanDto[];
 }
 
+export interface AigcDetectionTextDetectionRequestDto {
+    text: string;
+    minTokens: number | null;
+}
+
+export interface AigcDetectionTextDetectionDto {
+    requestId: string;
+    text: string;
+    aiProbability: number;
+    label: string;
+    probabilityMethod: string;
+    tokenCount: number;
+    charCount: number;
+    skipped: boolean;
+}
+
 export interface AigcDetectionResultDto {
     taskId: string;
     status: 'succeeded';

@@ -1,6 +1,8 @@
 import type {
     AigcDetectionCleanedMarkdownDto,
     AigcDetectionMarkedMarkdownDto,
+    AigcDetectionTextDetectionDto,
+    AigcDetectionTextDetectionRequestDto,
     ExternalCreateTaskResponse,
     ExternalTaskResultResponse,
     ExternalTaskStatusResponse,
@@ -11,6 +13,7 @@ import {
     parseExternalMarkedMarkdownResponse,
     parseExternalTaskResultResponse,
     parseExternalTaskStatusResponse,
+    parseExternalTextDetectionResponse,
 } from './mapper';
 import { aigcDetectionExternalSubmitFailed, aigcDetectionExternalSyncFailed } from './errors';
 
@@ -32,6 +35,7 @@ export interface AigcDetectionClientLike {
     getTaskResult(taskId: string): Promise<ExternalTaskResultResponse>;
     getTaskCleanedMarkdown(taskId: string): Promise<AigcDetectionCleanedMarkdownDto>;
     getTaskMarkedMarkdown(taskId: string): Promise<AigcDetectionMarkedMarkdownDto>;
+    detectText(input: AigcDetectionTextDetectionRequestDto): Promise<AigcDetectionTextDetectionDto>;
 }
 
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -214,6 +218,29 @@ export class AigcDetectionClient implements AigcDetectionClientLike {
         }
 
         return parseExternalMarkedMarkdownResponse(await response.json());
+    }
+
+    async detectText(input: AigcDetectionTextDetectionRequestDto): Promise<AigcDetectionTextDetectionDto> {
+        const response = await requestWithTimeout(
+            `${this.config.baseUrl}/api/v1/aigc-detection/text`,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    text: input.text,
+                    min_tokens: input.minTokens,
+                }),
+            },
+            this.config.timeoutMs
+        );
+
+        if (!response.ok) {
+            await throwExternalError(response, 'Failed to detect AIGC probability for text', 'sync');
+        }
+
+        return parseExternalTextDetectionResponse(await response.json());
     }
 }
 

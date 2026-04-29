@@ -6,6 +6,7 @@ import type {
     AigcDetectionResultDto,
     AigcDetectionSegmentDto,
     AigcDetectionSentenceDto,
+    AigcDetectionTextDetectionDto,
     ExternalCreateTaskResponse,
     ExternalTaskResultResponse,
     ExternalTaskStatusResponse,
@@ -134,6 +135,17 @@ const externalMarkedMarkdownSchema = z.object({
     marked_ai_sentence_count: z.number().int().min(0),
     unmatched_ai_sentence_count: z.number().int().min(0),
     spans: z.array(externalMarkedMarkdownSpanSchema),
+});
+
+const externalTextDetectionSchema = z.object({
+    request_id: z.string().min(1),
+    text: z.string(),
+    ai_probability: z.number().min(0).max(1),
+    label: z.string(),
+    probability_method: z.string(),
+    token_count: z.number().int().min(0),
+    char_count: z.number().int().min(0),
+    skipped: z.boolean(),
 });
 
 function toSentenceDto(sentence: z.infer<typeof externalSentenceSchema>): AigcDetectionSentenceDto {
@@ -289,6 +301,24 @@ export function parseExternalMarkedMarkdownResponse(payload: unknown): AigcDetec
         markedAiSentenceCount: result.data.marked_ai_sentence_count,
         unmatchedAiSentenceCount: result.data.unmatched_ai_sentence_count,
         spans: result.data.spans.map(toMarkedMarkdownSpanDto),
+    };
+}
+
+export function parseExternalTextDetectionResponse(payload: unknown): AigcDetectionTextDetectionDto {
+    const result = externalTextDetectionSchema.safeParse(payload);
+    if (!result.success) {
+        throw aigcDetectionExternalSyncFailed('AIGC detection text response is invalid', result.error.flatten());
+    }
+
+    return {
+        requestId: result.data.request_id,
+        text: result.data.text,
+        aiProbability: result.data.ai_probability,
+        label: result.data.label,
+        probabilityMethod: result.data.probability_method,
+        tokenCount: result.data.token_count,
+        charCount: result.data.char_count,
+        skipped: result.data.skipped,
     };
 }
 

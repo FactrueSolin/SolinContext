@@ -9,6 +9,7 @@ import type {
     AigcDetectionTaskDetail,
     AigcDetectionTaskListDto,
     AigcDetectionTaskSummary,
+    AigcDetectionTextDetectionDto,
 } from './dto';
 import { getAigcDetectionClient, type AigcDetectionClientLike } from './client';
 import {
@@ -33,6 +34,7 @@ const SUPPORTED_EXTENSIONS = new Set(['pdf', 'doc', 'docx']);
 const DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 const DEFAULT_SYNC_STALE_MS = 5000;
 const DEFAULT_SYNC_LOCK_MS = 15000;
+const DEFAULT_TEXT_MIN_TOKENS = 0;
 
 function readPositiveIntEnv(name: string, fallback: number): number {
     const value = process.env[name]?.trim();
@@ -108,6 +110,18 @@ function readCachedMarkdownDocument(task: AigcDetectionTaskRow): AigcDetectionMa
 
     const result = JSON.parse(task.resultJson) as Partial<AigcDetectionResultDto>;
     return result.markdownDocument ?? null;
+}
+
+function normalizeTextMinTokens(value: number | null | undefined): number {
+    if (value === null || value === undefined) {
+        return DEFAULT_TEXT_MIN_TOKENS;
+    }
+
+    if (!Number.isInteger(value) || value < 0) {
+        throw aigcDetectionValidationFailed('minTokens must be a non-negative integer');
+    }
+
+    return value;
 }
 
 async function fileToBytes(file: File): Promise<Uint8Array> {
@@ -367,6 +381,23 @@ export class AigcDetectionService {
                 total: result.total,
             },
         };
+    }
+
+    async detectText(
+        principal: Principal,
+        input: { text: string; minTokens?: number | null }
+    ): Promise<AigcDetectionTextDetectionDto> {
+        void principal;
+        const text = input.text.trim();
+        if (!text) {
+            throw aigcDetectionValidationFailed('Text is required');
+        }
+
+        const minTokens = normalizeTextMinTokens(input.minTokens);
+        return this.client.detectText({
+            text,
+            minTokens,
+        });
     }
 
     async getTaskDetail(principal: Principal, taskId: string): Promise<AigcDetectionTaskDetail> {

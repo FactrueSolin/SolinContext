@@ -413,6 +413,46 @@
           }
         }
       }
+    },
+    "/api/v1/aigc-detection/text": {
+      "post": {
+        "tags": [
+          "AIGC Detection"
+        ],
+        "operationId": "detect_text",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TextDetectionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Text AIGC detection result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TextDetectionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1166,6 +1206,66 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "TextDetectionRequest": {
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "properties": {
+          "min_tokens": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "TextDetectionResponse": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "text",
+          "ai_probability",
+          "label",
+          "probability_method",
+          "token_count",
+          "char_count",
+          "skipped"
+        ],
+        "properties": {
+          "ai_probability": {
+            "type": "number",
+            "format": "double"
+          },
+          "char_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "label": {
+            "type": "string"
+          },
+          "probability_method": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "skipped": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string"
+          },
+          "token_count": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }

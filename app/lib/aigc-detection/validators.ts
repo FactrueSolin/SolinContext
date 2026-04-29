@@ -36,4 +36,16 @@ export const retryAigcDetectionTaskParamsSchema = z.object({
     taskId: z.string().trim().min(1).max(64),
 });
 
+export const detectAigcTextBodySchema = z
+    .object({
+        text: z.string().trim().min(1),
+        minTokens: z.number().int().min(0).nullable().optional(),
+        min_tokens: z.number().int().min(0).nullable().optional(),
+    })
+    .transform((value) => ({
+        text: value.text,
+        minTokens: value.minTokens ?? value.min_tokens ?? null,
+    }));
+
 export type ListAigcDetectionTasksQuery = z.infer<typeof listAigcDetectionTasksQuerySchema>;
+export type DetectAigcTextBody = z.infer<typeof detectAigcTextBodySchema>;

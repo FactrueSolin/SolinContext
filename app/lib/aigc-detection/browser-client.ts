@@ -5,9 +5,11 @@ import type {
     AigcDetectionTaskDetail,
     AigcDetectionTaskListDto,
     AigcDetectionTaskStatus,
+    AigcDetectionTextDetectionDto,
 } from './dto';
 
 export type AigcDetectionApiErrorCode =
+    | 'VALIDATION_FAILED'
     | 'AIGC_DETECTION_VALIDATION_FAILED'
     | 'AIGC_DETECTION_UNSUPPORTED_FILE_TYPE'
     | 'AIGC_DETECTION_FILE_TOO_LARGE'
@@ -98,6 +100,10 @@ function getBasePath(workspaceSlug: string) {
     return `/api/workspaces/${encodeURIComponent(workspaceSlug)}/aigc-detection/tasks`;
 }
 
+function getModulePath(workspaceSlug: string) {
+    return `/api/workspaces/${encodeURIComponent(workspaceSlug)}/aigc-detection`;
+}
+
 export function listAigcDetectionTasks(workspaceSlug: string, params: ListAigcDetectionTasksParams = {}) {
     return request<AigcDetectionTaskListDto>(
         `${getBasePath(workspaceSlug)}${buildSearch({
@@ -152,5 +158,18 @@ export function createAigcDetectionTask(workspaceSlug: string, payload: {
     return request<{ task: AigcDetectionTaskDetail; reusedResult: boolean }>(getBasePath(workspaceSlug), {
         method: 'POST',
         body: formData,
+    });
+}
+
+export function detectAigcText(workspaceSlug: string, payload: { text: string; minTokens?: number | null }) {
+    return request<AigcDetectionTextDetectionDto>(`${getModulePath(workspaceSlug)}/text`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            text: payload.text,
+            minTokens: payload.minTokens ?? null,
+        }),
     });
 }

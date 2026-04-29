@@ -48,6 +48,7 @@ class MockAigcDetectionClient implements AigcDetectionClientLike {
     readonly getTaskResult = vi.fn<AigcDetectionClientLike['getTaskResult']>();
     readonly getTaskCleanedMarkdown = vi.fn<AigcDetectionClientLike['getTaskCleanedMarkdown']>();
     readonly getTaskMarkedMarkdown = vi.fn<AigcDetectionClientLike['getTaskMarkedMarkdown']>();
+    readonly detectText = vi.fn<AigcDetectionClientLike['detectText']>();
 }
 
 describe('AigcDetectionService', () => {
@@ -271,5 +272,36 @@ describe('AigcDetectionService', () => {
         const retryPayload = client.createTask.mock.calls[1]?.[0];
         expect(retryPayload?.metadata.localTaskId).toBe(created.task.id);
         expect(retryPayload?.forceReprocess).toBe(true);
+    });
+
+    it('detects a single text block without creating a task', async () => {
+        client.detectText.mockResolvedValueOnce({
+            requestId: 'req-text-1',
+            text: 'hello world',
+            aiProbability: 0.72,
+            label: 'ai_likely',
+            probabilityMethod: 'token_mean',
+            tokenCount: 2,
+            charCount: 11,
+            skipped: false,
+        });
+
+        const result = await service.detectText(principal, {
+            text: '  hello world  ',
+            minTokens: 1,
+        });
+
+        expect(result.aiProbability).toBe(0.72);
+        expect(client.detectText).toHaveBeenCalledWith({
+            text: 'hello world',
+            minTokens: 1,
+        });
+    });
+
+    it('rejects empty single text detection input', async () => {
+        await expect(service.detectText(principal, { text: '   ' })).rejects.toMatchObject({
+            code: 'AIGC_DETECTION_VALIDATION_FAILED',
+        });
+        expect(client.detectText).not.toHaveBeenCalled();
     });
 });

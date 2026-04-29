@@ -21,6 +21,7 @@ const mockService = {
     getTaskResult: vi.fn(),
     getTaskCleanedMarkdown: vi.fn(),
     getTaskMarkedMarkdown: vi.fn(),
+    detectText: vi.fn(),
     retryTask: vi.fn(),
 };
 
@@ -117,6 +118,49 @@ describe('Workspace AIGC detection API', () => {
         expect(response.status).toBe(422);
         expect(data.error.code).toBe('AIGC_DETECTION_VALIDATION_FAILED');
         expect(mockService.createTask).not.toHaveBeenCalled();
+    });
+
+    it('detects a single text block', async () => {
+        const { POST } = await import('../../app/api/workspaces/[workspaceSlug]/aigc-detection/text/route');
+        mockService.detectText.mockResolvedValue({
+            requestId: 'req-text-1',
+            text: '待检测的一段文本。',
+            aiProbability: 0.72,
+            label: 'ai_likely',
+            probabilityMethod: 'token_mean',
+            tokenCount: 32,
+            charCount: 9,
+            skipped: false,
+        });
+
+        const response = await POST(
+            createRequest(
+                '/api/workspaces/ai-team/aigc-detection/text',
+                'POST',
+                JSON.stringify({ text: '待检测的一段文本。', min_tokens: 2 }),
+                { 'content-type': 'application/json' }
+            ),
+            { params: Promise.resolve({ workspaceSlug: 'ai-team' }) }
+        );
+
+        expect(response.status).toBe(200);
+        await expect(response.json()).resolves.toEqual({
+            data: {
+                requestId: 'req-text-1',
+                text: '待检测的一段文本。',
+                aiProbability: 0.72,
+                label: 'ai_likely',
+                probabilityMethod: 'token_mean',
+                tokenCount: 32,
+                charCount: 9,
+                skipped: false,
+            },
+        });
+        expect(mockRequirePermission).toHaveBeenCalledWith(mockPrincipal, 'aigc_detection:write');
+        expect(mockService.detectText).toHaveBeenCalledWith(mockPrincipal, {
+            text: '待检测的一段文本。',
+            minTokens: 2,
+        });
     });
 
     it('returns task detail, result, and markdown through nested routes', async () => {

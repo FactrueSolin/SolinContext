@@ -10,8 +10,9 @@
 2. 提供任务状态查询接口
 3. 提供任务结果查询接口
 4. 提供 MinerU 清洗 Markdown 与 AI 标记 Markdown 查询接口
-5. 提供已处理文件列表与按文件 `sha256` 查结果接口
-6. 通过 Rust API 调用内部 Python 推理服务完成块级与句子级检测
+5. 提供单段文本 AIGC 率同步查询接口
+6. 提供已处理文件列表与按文件 `sha256` 查结果接口
+7. 通过 Rust API 调用内部 Python 推理服务完成块级、句子级与文本级检测
 
 当前对外 API 基础路径：
 
@@ -149,14 +150,15 @@ just serve-api
 3. `INVALID_UPLOAD`
 4. `INVALID_METADATA`
 5. `INVALID_FORCE_REPROCESS`
-6. `UNSUPPORTED_MEDIA_TYPE`
-7. `PAYLOAD_TOO_LARGE`
-8. `IDEMPOTENCY_CONFLICT`
-9. `TASK_NOT_FOUND`
-10. `TASK_NOT_FINISHED`
-11. `RESULT_NOT_FOUND`
-12. `RESULT_NOT_INDEXED`
-13. `INTERNAL_ERROR`
+6. `TEXT_REQUIRED`
+7. `UNSUPPORTED_MEDIA_TYPE`
+8. `PAYLOAD_TOO_LARGE`
+9. `IDEMPOTENCY_CONFLICT`
+10. `TASK_NOT_FOUND`
+11. `TASK_NOT_FINISHED`
+12. `RESULT_NOT_FOUND`
+13. `RESULT_NOT_INDEXED`
+14. `INTERNAL_ERROR`
 
 ## 4. API 列表
 
@@ -176,7 +178,61 @@ ok
 
 返回 OpenAPI 3.1 JSON。
 
-### 4.3 创建检测任务
+### 4.3 查询单段文本 AIGC 率
+
+`POST /api/v1/aigc-detection/text`
+
+请求类型：
+
+`application/json`
+
+请求体：
+
+```json
+{
+  "text": "待检测的一段文本。",
+  "min_tokens": 0
+}
+```
+
+字段说明：
+
+1. `text`：必填，待检测文本；服务端会去除首尾空白，空文本返回 `400 TEXT_REQUIRED`
+2. `min_tokens`：可选，默认 `0`；大于 `0` 时，若文本 token 数低于该值，则返回 `skipped=true`
+
+成功响应：
+
+状态码：`200 OK`
+
+```json
+{
+  "request_id": "req-demo-001",
+  "text": "待检测的一段文本。",
+  "ai_probability": 0.72,
+  "label": "ai_likely",
+  "probability_method": "token_mean",
+  "token_count": 32,
+  "char_count": 9,
+  "skipped": false
+}
+```
+
+说明：
+
+1. `ai_probability` 即该段文本的 AIGC 概率
+2. `label` 通常为 `ai_likely` 或 `human_likely`
+3. 该接口同步调用内部 Python detector，不创建任务、不写入文件结果索引
+
+`curl` 示例：
+
+```bash
+curl -X POST "http://127.0.0.1:3000/api/v1/aigc-detection/text" \
+  -H "Content-Type: application/json" \
+  -H "X-Request-Id: req-text-demo-001" \
+  -d '{"text":"待检测的一段文本。"}'
+```
+
+### 4.4 创建检测任务
 
 `POST /api/v1/aigc-detection/tasks`
 
@@ -226,7 +282,7 @@ curl -X POST "http://127.0.0.1:3000/api/v1/aigc-detection/tasks" \
   -F "force_reprocess=false"
 ```
 
-### 4.4 查询任务状态
+### 4.5 查询任务状态
 
 `GET /api/v1/aigc-detection/tasks/{task_id}`
 
@@ -261,7 +317,7 @@ curl -X POST "http://127.0.0.1:3000/api/v1/aigc-detection/tasks" \
 curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5q3q9k4p"
 ```
 
-### 4.5 查询任务结果
+### 4.6 查询任务结果
 
 `GET /api/v1/aigc-detection/tasks/{task_id}/result`
 
@@ -366,7 +422,7 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5
 curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5q3q9k4p/result"
 ```
 
-### 4.6 查询 MinerU 清洗 Markdown
+### 4.7 查询 MinerU 清洗 Markdown
 
 `GET /api/v1/aigc-detection/tasks/{task_id}/cleaned-markdown`
 
@@ -393,7 +449,7 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5
 curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5q3q9k4p/cleaned-markdown"
 ```
 
-### 4.7 查询 AI 标记 Markdown
+### 4.8 查询 AI 标记 Markdown
 
 `GET /api/v1/aigc-detection/tasks/{task_id}/marked-markdown`
 
@@ -438,7 +494,7 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5
 curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5q3q9k4p/marked-markdown"
 ```
 
-### 4.8 列出已处理文件
+### 4.9 列出已处理文件
 
 `GET /api/v1/aigc-detection/files`
 
@@ -479,7 +535,7 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/tasks/task_01jv7w2n4r7n5n4g0v5
 curl "http://127.0.0.1:3000/api/v1/aigc-detection/files?page=1&page_size=20&status=succeeded"
 ```
 
-### 4.9 按文件 `sha256` 查询结果
+### 4.10 按文件 `sha256` 查询结果
 
 `GET /api/v1/aigc-detection/files/{sha256}/result`
 
@@ -594,6 +650,10 @@ curl "http://127.0.0.1:3000/api/v1/aigc-detection/files/2e7d2c03a9507ae265ecf5b5
 4. 如需原文 Markdown，调用 `GET /api/v1/aigc-detection/tasks/{task_id}/cleaned-markdown`
 5. 如需 AI 标记 Markdown，调用 `GET /api/v1/aigc-detection/tasks/{task_id}/marked-markdown`
 6. 对重复文件，可直接使用 `GET /api/v1/aigc-detection/files/{sha256}/result`
+
+如果只需要检测一段文本，不需要创建文件任务，直接调用：
+
+`POST /api/v1/aigc-detection/text`
 
 ## 8. 相关文件
 
