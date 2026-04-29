@@ -646,7 +646,7 @@ function TaskListPage({ workspaceSlug }: { workspaceSlug: string }) {
                             AIGC 检测
                         </h1>
                         <p className="mt-3 text-sm leading-7 text-slate-600 sm:text-base">
-                            上传文档后，系统会异步计算文本的 AIGC 率与检测明细。任务会保留在当前工作区，便于后续查看与重试。
+                            上传文档后，系统会异步计算文本的 AIGC 率与检测明细，用于辅助定位需要人工改写的内容，帮助后续降低 AIGC 率。任务会保留在当前工作区，便于后续查看与重试。
                         </p>
                         <div className="mt-4 flex flex-wrap gap-3 text-xs text-slate-500">
                             <span className="rounded-full border border-white/70 bg-white/75 px-3 py-1.5">当前工作区：{workspaceSlug}</span>
@@ -679,7 +679,13 @@ function TaskListPage({ workspaceSlug }: { workspaceSlug: string }) {
             <section className="mt-6 grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
                 <article className="rounded-[28px] border border-cyan-100 bg-cyan-50/80 p-5 shadow-[0_24px_64px_-52px_rgba(15,23,42,0.5)]">
                     <div className="text-xs font-medium uppercase tracking-[0.16em] text-cyan-700">使用说明</div>
-                    <div className="mt-4 grid gap-3 text-sm leading-7 text-slate-700 sm:grid-cols-2">
+                    <div className="mt-4 grid gap-3 text-sm leading-7 text-slate-700 sm:grid-cols-3">
+                        <div className="rounded-[20px] border border-white/70 bg-white/75 px-4 py-3">
+                            <div className="font-semibold text-slate-950">辅助降 AIGC 率</div>
+                            <p className="mt-1 text-slate-600">
+                                通过识别更可能被判定为 AI 生成的片段，为后续人工润色、改写和复检提供参考。
+                            </p>
+                        </div>
                         <div className="rounded-[20px] border border-white/70 bg-white/75 px-4 py-3">
                             <div className="font-semibold text-slate-950">整篇文章检测</div>
                             <p className="mt-1 text-slate-600">

@@ -56,7 +56,7 @@ systemd-deploy-user service=default_service_name env_file=default_env_file host=
   @"{{systemd_dir}}/build-standalone.sh" "{{project_root}}"
   @"{{systemd_dir}}/install-service.sh" user "{{service}}" "{{project_root}}" "{{env_file}}" "{{host}}" "{{port}}" "{{data_dir}}"
 
-systemd-restart service=default_service_name:
+systemd-restart service=default_service_name: standalone-build
   @"{{systemd_dir}}/control-service.sh" restart system "{{service}}"
 
 systemd-restart-user service=default_service_name:
