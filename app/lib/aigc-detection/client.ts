@@ -1,6 +1,14 @@
-import { ExternalTaskResultResponse, ExternalTaskStatusResponse, type ExternalCreateTaskResponse } from './dto';
+import type {
+    AigcDetectionCleanedMarkdownDto,
+    AigcDetectionMarkedMarkdownDto,
+    ExternalCreateTaskResponse,
+    ExternalTaskResultResponse,
+    ExternalTaskStatusResponse,
+} from './dto';
 import {
+    parseExternalCleanedMarkdownResponse,
     parseExternalCreateTaskResponse,
+    parseExternalMarkedMarkdownResponse,
     parseExternalTaskResultResponse,
     parseExternalTaskStatusResponse,
 } from './mapper';
@@ -22,6 +30,8 @@ export interface AigcDetectionClientLike {
     }): Promise<ExternalCreateTaskResponse>;
     getTaskStatus(taskId: string): Promise<ExternalTaskStatusResponse>;
     getTaskResult(taskId: string): Promise<ExternalTaskResultResponse>;
+    getTaskCleanedMarkdown(taskId: string): Promise<AigcDetectionCleanedMarkdownDto>;
+    getTaskMarkedMarkdown(taskId: string): Promise<AigcDetectionMarkedMarkdownDto>;
 }
 
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -51,6 +61,12 @@ function getConfig(): AigcDetectionClientConfig {
         baseUrl: baseUrl.replace(/\/+$/, ''),
         timeoutMs: readPositiveIntEnv('AIGC_DETECTION_API_TIMEOUT_MS', DEFAULT_TIMEOUT_MS),
     };
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+    const buffer = new ArrayBuffer(bytes.byteLength);
+    new Uint8Array(buffer).set(bytes);
+    return buffer;
 }
 
 async function parseJsonResponse(response: Response): Promise<unknown> {
@@ -110,7 +126,7 @@ export class AigcDetectionClient implements AigcDetectionClientLike {
         const form = new FormData();
         form.set(
             'file',
-            new File([options.bytes], options.fileName, {
+            new File([toArrayBuffer(options.bytes)], options.fileName, {
                 type: options.mimeType,
             })
         );
@@ -166,6 +182,38 @@ export class AigcDetectionClient implements AigcDetectionClientLike {
         }
 
         return parseExternalTaskResultResponse(await response.json());
+    }
+
+    async getTaskCleanedMarkdown(taskId: string): Promise<AigcDetectionCleanedMarkdownDto> {
+        const response = await requestWithTimeout(
+            `${this.config.baseUrl}/api/v1/aigc-detection/tasks/${encodeURIComponent(taskId)}/cleaned-markdown`,
+            {
+                method: 'GET',
+            },
+            this.config.timeoutMs
+        );
+
+        if (!response.ok) {
+            await throwExternalError(response, 'Failed to fetch AIGC detection cleaned markdown', 'sync');
+        }
+
+        return parseExternalCleanedMarkdownResponse(await response.json());
+    }
+
+    async getTaskMarkedMarkdown(taskId: string): Promise<AigcDetectionMarkedMarkdownDto> {
+        const response = await requestWithTimeout(
+            `${this.config.baseUrl}/api/v1/aigc-detection/tasks/${encodeURIComponent(taskId)}/marked-markdown`,
+            {
+                method: 'GET',
+            },
+            this.config.timeoutMs
+        );
+
+        if (!response.ok) {
+            await throwExternalError(response, 'Failed to fetch AIGC detection marked markdown', 'sync');
+        }
+
+        return parseExternalMarkedMarkdownResponse(await response.json());
     }
 }
 

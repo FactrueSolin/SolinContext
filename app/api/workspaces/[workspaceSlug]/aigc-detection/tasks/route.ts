@@ -26,6 +26,19 @@ function parseBooleanFormValue(value: FormDataEntryValue | null): boolean {
     throw aigcDetectionValidationFailed('forceReprocess must be "true" or "false"');
 }
 
+function isUploadedFile(value: FormDataEntryValue | null): value is File {
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        'arrayBuffer' in value &&
+        typeof value.arrayBuffer === 'function' &&
+        'name' in value &&
+        typeof value.name === 'string' &&
+        'size' in value &&
+        typeof value.size === 'number'
+    );
+}
+
 export async function GET(
     request: Request,
     { params }: { params: Promise<{ workspaceSlug: string }> }
@@ -56,7 +69,7 @@ export async function POST(
         const formData = await request.formData();
         const file = formData.get('file');
 
-        if (!(file instanceof File)) {
+        if (!isUploadedFile(file)) {
             throw aigcDetectionValidationFailed('Uploaded file is required', {
                 file: ['File is required'],
             });

@@ -46,6 +46,8 @@ class MockAigcDetectionClient implements AigcDetectionClientLike {
     readonly createTask = vi.fn<AigcDetectionClientLike['createTask']>();
     readonly getTaskStatus = vi.fn<AigcDetectionClientLike['getTaskStatus']>();
     readonly getTaskResult = vi.fn<AigcDetectionClientLike['getTaskResult']>();
+    readonly getTaskCleanedMarkdown = vi.fn<AigcDetectionClientLike['getTaskCleanedMarkdown']>();
+    readonly getTaskMarkedMarkdown = vi.fn<AigcDetectionClientLike['getTaskMarkedMarkdown']>();
 }
 
 describe('AigcDetectionService', () => {
@@ -154,6 +156,27 @@ describe('AigcDetectionService', () => {
                 cleanedFullText: 'hello world',
                 cleanedBlocks: [{ blockId: 'b1', order: 0, text: 'hello world' }],
             },
+            markdownDocument: {
+                cleanedMarkdown: '# hello world',
+                markedMarkdown: '# [[AI_LIKELY]]hello world[[/AI_LIKELY]]',
+                markerStart: '[[AI_LIKELY]]',
+                markerEnd: '[[/AI_LIKELY]]',
+                markedAiSentenceCount: 1,
+                unmatchedAiSentenceCount: 0,
+                spans: [
+                    {
+                        sentenceId: 's1',
+                        blockId: 'b1',
+                        order: 0,
+                        start: 2,
+                        end: 13,
+                        text: 'hello world',
+                        aiProbability: 0.8,
+                        probabilityMethod: 'trained',
+                        matched: true,
+                    },
+                ],
+            },
             aiSentences: [
                 {
                     sentenceId: 's1',
@@ -185,6 +208,12 @@ describe('AigcDetectionService', () => {
 
         const firstDetail = await service.getTaskDetail(principal, firstCreated.task.id);
         expect(firstDetail.status).toBe('succeeded');
+        await expect(service.getTaskMarkedMarkdown(principal, firstCreated.task.id)).resolves.toMatchObject({
+            taskId: firstCreated.task.id,
+            markdown: '# [[AI_LIKELY]]hello world[[/AI_LIKELY]]',
+            markedAiSentenceCount: 1,
+        });
+        expect(client.getTaskMarkedMarkdown).not.toHaveBeenCalled();
 
         const secondCreated = await service.createTask(principal, {
             file: new File(['hello world'], 'paper.pdf', { type: 'application/pdf' }),

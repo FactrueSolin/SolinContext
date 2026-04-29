@@ -10,6 +10,7 @@ This version has breaking changes — APIs, conventions, and file structure may 
 <info>
 typescript项目规范
 1. 禁止使用any类型
+2. 让用户手动启动dev服务器进行测试
 </info>
 <info>
 项目规范

@@ -2,6 +2,9 @@ import { ulid } from 'ulid';
 import type { Principal } from '../auth/principal';
 import { getAppDatabaseContext, type AppDatabaseContext } from '../db/client';
 import type {
+    AigcDetectionCleanedMarkdownDto,
+    AigcDetectionMarkdownDocumentDto,
+    AigcDetectionMarkedMarkdownDto,
     AigcDetectionResultDto,
     AigcDetectionTaskDetail,
     AigcDetectionTaskListDto,
@@ -10,6 +13,7 @@ import type {
 import { getAigcDetectionClient, type AigcDetectionClientLike } from './client';
 import {
     aigcDetectionFileTooLarge,
+    aigcDetectionExternalSyncFailed,
     aigcDetectionTaskNotCompleted,
     aigcDetectionTaskNotFound,
     aigcDetectionTaskNotRetryable,
@@ -95,6 +99,15 @@ function mapTaskDetail(task: AigcDetectionTaskRow): AigcDetectionTaskDetail {
         submittedAt: task.submittedAt,
         lastSyncedAt: task.lastSyncedAt,
     };
+}
+
+function readCachedMarkdownDocument(task: AigcDetectionTaskRow): AigcDetectionMarkdownDocumentDto | null {
+    if (!task.resultJson) {
+        return null;
+    }
+
+    const result = JSON.parse(task.resultJson) as Partial<AigcDetectionResultDto>;
+    return result.markdownDocument ?? null;
 }
 
 async function fileToBytes(file: File): Promise<Uint8Array> {
@@ -193,7 +206,7 @@ export class AigcDetectionService {
                     ...taskSeed,
                     status: 'succeeded',
                     deduplicated: true,
-                    externalTaskId: existingTask.externalTaskId,
+                    externalTaskId: null,
                     externalStatus: existingTask.externalStatus,
                     progressCurrent: existingTask.progressCurrent,
                     progressTotal: existingTask.progressTotal,
@@ -203,7 +216,7 @@ export class AigcDetectionService {
                     resultSummary: existingTask.resultSummary,
                     resultJson: existingTask.resultJson,
                     rawResultJson: existingTask.rawResultJson,
-                    submittedAt: existingTask.submittedAt,
+                    submittedAt: now,
                     completedAt: now,
                     lastSyncedAt: existingTask.lastSyncedAt,
                 });
@@ -371,6 +384,67 @@ export class AigcDetectionService {
         }
 
         return JSON.parse(task.resultJson) as AigcDetectionResultDto;
+    }
+
+    async getTaskCleanedMarkdown(principal: Principal, taskId: string): Promise<AigcDetectionCleanedMarkdownDto> {
+        let task = this.requireTask(principal.activeWorkspaceId, taskId);
+        task = await this.syncIfNeeded(task);
+
+        if (task.status !== 'succeeded') {
+            throw aigcDetectionTaskNotCompleted();
+        }
+
+        const cachedDocument = readCachedMarkdownDocument(task);
+        if (cachedDocument) {
+            return {
+                taskId: task.id,
+                status: 'succeeded',
+                markdown: cachedDocument.cleanedMarkdown,
+            };
+        }
+
+        if (!task.externalTaskId) {
+            throw aigcDetectionExternalSyncFailed('AIGC detection task is missing external task id');
+        }
+
+        const markdown = await this.client.getTaskCleanedMarkdown(task.externalTaskId);
+        return {
+            ...markdown,
+            taskId: task.id,
+        };
+    }
+
+    async getTaskMarkedMarkdown(principal: Principal, taskId: string): Promise<AigcDetectionMarkedMarkdownDto> {
+        let task = this.requireTask(principal.activeWorkspaceId, taskId);
+        task = await this.syncIfNeeded(task);
+
+        if (task.status !== 'succeeded') {
+            throw aigcDetectionTaskNotCompleted();
+        }
+
+        const cachedDocument = readCachedMarkdownDocument(task);
+        if (cachedDocument) {
+            return {
+                taskId: task.id,
+                status: 'succeeded',
+                markdown: cachedDocument.markedMarkdown,
+                markerStart: cachedDocument.markerStart,
+                markerEnd: cachedDocument.markerEnd,
+                markedAiSentenceCount: cachedDocument.markedAiSentenceCount,
+                unmatchedAiSentenceCount: cachedDocument.unmatchedAiSentenceCount,
+                spans: cachedDocument.spans,
+            };
+        }
+
+        if (!task.externalTaskId) {
+            throw aigcDetectionExternalSyncFailed('AIGC detection task is missing external task id');
+        }
+
+        const markdown = await this.client.getTaskMarkedMarkdown(task.externalTaskId);
+        return {
+            ...markdown,
+            taskId: task.id,
+        };
     }
 
     async retryTask(principal: Principal, taskId: string): Promise<AigcDetectionTaskDetail> {

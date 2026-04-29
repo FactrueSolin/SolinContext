@@ -1,4 +1,6 @@
 import type {
+    AigcDetectionCleanedMarkdownDto,
+    AigcDetectionMarkedMarkdownDto,
     AigcDetectionResultDto,
     AigcDetectionTaskDetail,
     AigcDetectionTaskListDto,
@@ -113,6 +115,18 @@ export function getAigcDetectionTaskDetail(workspaceSlug: string, taskId: string
 
 export function getAigcDetectionTaskResult(workspaceSlug: string, taskId: string) {
     return request<AigcDetectionResultDto>(`${getBasePath(workspaceSlug)}/${encodeURIComponent(taskId)}/result`);
+}
+
+export function getAigcDetectionCleanedMarkdown(workspaceSlug: string, taskId: string) {
+    return request<AigcDetectionCleanedMarkdownDto>(
+        `${getBasePath(workspaceSlug)}/${encodeURIComponent(taskId)}/cleaned-markdown`
+    );
+}
+
+export function getAigcDetectionMarkedMarkdown(workspaceSlug: string, taskId: string) {
+    return request<AigcDetectionMarkedMarkdownDto>(
+        `${getBasePath(workspaceSlug)}/${encodeURIComponent(taskId)}/marked-markdown`
+    );
 }
 
 export function retryAigcDetectionTask(workspaceSlug: string, taskId: string) {

@@ -3,7 +3,8 @@ import "./globals.css";
 import { EditorProvider } from "./contexts/EditorContext";
 
 export const viewport: Viewport = {
-  themeColor: "#0a0a0a",
+  colorScheme: "light",
+  themeColor: "#ffffff",
   width: "device-width",
   initialScale: 1,
 };

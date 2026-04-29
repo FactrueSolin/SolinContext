@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     AlertCircle,
     ArrowLeft,
@@ -17,6 +17,7 @@ import {
 import {
     AigcDetectionApiError,
     createAigcDetectionTask,
+    getAigcDetectionMarkedMarkdown,
     getAigcDetectionTaskDetail,
     getAigcDetectionTaskResult,
     listAigcDetectionTasks,
@@ -24,6 +25,7 @@ import {
     type ListAigcDetectionTasksParams,
 } from '../lib/aigc-detection/browser-client';
 import type {
+    AigcDetectionMarkedMarkdownDto,
     AigcDetectionResultDto,
     AigcDetectionTaskDetail,
     AigcDetectionTaskStatus,
@@ -31,6 +33,7 @@ import type {
 } from '../lib/aigc-detection/dto';
 import { getCurrentSession } from '../lib/workspaces/client';
 import { buildWorkspaceModulePath } from '../lib/workspace-routing';
+import MarkdownPreview from './ui/MarkdownPreview';
 
 type TaskFilter = 'all' | 'processing' | 'succeeded' | 'failed';
 
@@ -729,6 +732,7 @@ function TaskDetailPage({
     const reusedResult = searchParams.get('reused') === '1';
     const [task, setTask] = useState<AigcDetectionTaskDetail | null>(null);
     const [result, setResult] = useState<AigcDetectionResultDto | null>(null);
+    const [markedMarkdown, setMarkedMarkdown] = useState<AigcDetectionMarkedMarkdownDto | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -750,7 +754,7 @@ function TaskDetailPage({
         return query.toString() ? `${basePath}?${query.toString()}` : basePath;
     }, [listKeyword, listStatus, workspaceSlug]);
 
-    async function loadTask(showRefreshState = false) {
+    const loadTask = useCallback(async (showRefreshState = false) => {
         if (showRefreshState) {
             setIsRefreshing(true);
         } else {
@@ -765,14 +769,27 @@ function TaskDetailPage({
             setTask(detail.task);
 
             if (detail.task.status === 'succeeded') {
-                try {
-                    const nextResult = await getAigcDetectionTaskResult(workspaceSlug, taskId);
-                    setResult(nextResult);
-                } catch (resultError) {
-                    setActionError(getTaskErrorMessage(resultError, '结果读取失败，请稍后重试。'));
+                const [nextResult, nextMarkedMarkdown] = await Promise.allSettled([
+                    getAigcDetectionTaskResult(workspaceSlug, taskId),
+                    getAigcDetectionMarkedMarkdown(workspaceSlug, taskId),
+                ]);
+
+                if (nextResult.status === 'fulfilled') {
+                    setResult(nextResult.value);
+                } else {
+                    setResult(null);
+                    setActionError(getTaskErrorMessage(nextResult.reason, '结果读取失败，请稍后重试。'));
+                }
+
+                if (nextMarkedMarkdown.status === 'fulfilled') {
+                    setMarkedMarkdown(nextMarkedMarkdown.value);
+                } else {
+                    setMarkedMarkdown(null);
+                    setActionError(getTaskErrorMessage(nextMarkedMarkdown.reason, 'Markdown 原文读取失败，请稍后重试。'));
                 }
             } else {
                 setResult(null);
+                setMarkedMarkdown(null);
             }
         } catch (loadError) {
             setError(getTaskErrorMessage(loadError, '任务详情加载失败，请稍后重试。'));
@@ -780,11 +797,11 @@ function TaskDetailPage({
             setIsLoading(false);
             setIsRefreshing(false);
         }
-    }
+    }, [taskId, workspaceSlug]);
 
     useEffect(() => {
         void loadTask();
-    }, [taskId, workspaceSlug]);
+    }, [loadTask]);
 
     useEffect(() => {
         if (!task || !pollingStatuses.includes(task.status)) {
@@ -798,7 +815,7 @@ function TaskDetailPage({
         return () => {
             window.clearTimeout(timeoutId);
         };
-    }, [task, workspaceSlug, taskId]);
+    }, [loadTask, task]);
 
     async function handleRetry() {
         setIsRetrying(true);
@@ -808,6 +825,7 @@ function TaskDetailPage({
             const data = await retryAigcDetectionTask(workspaceSlug, taskId);
             setTask(data.task);
             setResult(null);
+            setMarkedMarkdown(null);
         } catch (retryError) {
             setActionError(getTaskErrorMessage(retryError, '重试失败，请稍后再试。'));
         } finally {
@@ -972,7 +990,7 @@ function TaskDetailPage({
                 </article>
             </section>
 
-            <section className="mt-6 grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+            <section className="mt-6">
                 <article className="rounded-[28px] border border-white/70 bg-white/85 p-5 shadow-[0_24px_64px_-52px_rgba(15,23,42,0.5)]">
                     <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">检测结果摘要</div>
                     <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -999,7 +1017,44 @@ function TaskDetailPage({
                         完成时间 {formatDateTime(result?.completedAt ?? task.completedAt)}
                     </div>
                 </article>
+            </section>
 
+            <section className="mt-6 rounded-[28px] border border-white/70 bg-white/85 p-5 shadow-[0_24px_64px_-52px_rgba(15,23,42,0.5)]">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                        <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">原文定位</div>
+                        <h2 className="mt-2 text-xl font-semibold text-slate-950">Markdown 原文高亮</h2>
+                    </div>
+                    {markedMarkdown ? (
+                        <div className="flex flex-wrap gap-2 text-xs text-slate-600">
+                            <span className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1 font-semibold text-rose-700">
+                                AI 标记 {markedMarkdown.markedAiSentenceCount}
+                            </span>
+                            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 font-semibold text-slate-600">
+                                未定位 {markedMarkdown.unmatchedAiSentenceCount}
+                            </span>
+                        </div>
+                    ) : null}
+                </div>
+                {markedMarkdown ? (
+                    <div className="mt-5 max-h-[760px] overflow-y-auto rounded-[22px] border border-slate-200 bg-white px-5 py-4">
+                        <MarkdownPreview
+                            content={markedMarkdown.markdown}
+                            aiMarkerStart={markedMarkdown.markerStart}
+                            aiMarkerEnd={markedMarkdown.markerEnd}
+                            className="text-slate-800"
+                        />
+                    </div>
+                ) : (
+                    <div className="mt-5 rounded-[24px] border border-dashed border-slate-300 bg-slate-50/70 px-4 py-8 text-sm leading-7 text-slate-500">
+                        {task.status === 'succeeded'
+                            ? '当前结果没有返回可展示的 Markdown 原文。'
+                            : '任务完成后，这里会展示原文与 AI 片段定位。'}
+                    </div>
+                )}
+            </section>
+
+            <section className="mt-6">
                 <article className="rounded-[28px] border border-white/70 bg-white/85 p-5 shadow-[0_24px_64px_-52px_rgba(15,23,42,0.5)]">
                     <div className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">分段明细</div>
                     {result?.segments.length ? (

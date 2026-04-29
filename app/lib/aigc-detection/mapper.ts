@@ -1,5 +1,8 @@
 import { z } from 'zod';
 import type {
+    AigcDetectionCleanedMarkdownDto,
+    AigcDetectionMarkedMarkdownDto,
+    AigcDetectionMarkedMarkdownSpanDto,
     AigcDetectionResultDto,
     AigcDetectionSegmentDto,
     AigcDetectionSentenceDto,
@@ -66,6 +69,28 @@ const externalBlockSchema = z.object({
     probability_method: z.string(),
 });
 
+const externalMarkedMarkdownSpanSchema = z.object({
+    sentence_id: z.string().min(1),
+    block_id: z.string().min(1),
+    order: z.number().int().min(0),
+    start: z.number().int().min(0),
+    end: z.number().int().min(0),
+    text: z.string(),
+    ai_probability: z.number().min(0).max(1),
+    probability_method: z.string(),
+    matched: z.boolean(),
+});
+
+const externalMarkdownDocumentSchema = z.object({
+    cleaned_markdown: z.string(),
+    marked_markdown: z.string(),
+    marker_start: z.string(),
+    marker_end: z.string(),
+    marked_ai_sentence_count: z.number().int().min(0),
+    unmatched_ai_sentence_count: z.number().int().min(0),
+    spans: z.array(externalMarkedMarkdownSpanSchema),
+});
+
 const externalTaskResultSchema = z.object({
     task_id: z.string().min(1),
     status: z.string().min(1),
@@ -89,8 +114,26 @@ const externalTaskResultSchema = z.object({
             })
         ),
     }),
+    markdown_document: externalMarkdownDocumentSchema.nullish(),
     ai_sentences: z.array(externalSentenceSchema),
     blocks: z.array(externalBlockSchema),
+});
+
+const externalCleanedMarkdownSchema = z.object({
+    task_id: z.string().min(1),
+    status: z.string().min(1),
+    markdown: z.string(),
+});
+
+const externalMarkedMarkdownSchema = z.object({
+    task_id: z.string().min(1),
+    status: z.string().min(1),
+    markdown: z.string(),
+    marker_start: z.string(),
+    marker_end: z.string(),
+    marked_ai_sentence_count: z.number().int().min(0),
+    unmatched_ai_sentence_count: z.number().int().min(0),
+    spans: z.array(externalMarkedMarkdownSpanSchema),
 });
 
 function toSentenceDto(sentence: z.infer<typeof externalSentenceSchema>): AigcDetectionSentenceDto {
@@ -119,6 +162,34 @@ function toSegmentDto(block: z.infer<typeof externalBlockSchema>): AigcDetection
         aiProbability: block.ai_probability,
         label: block.label,
         probabilityMethod: block.probability_method,
+    };
+}
+
+function toMarkedMarkdownSpanDto(
+    span: z.infer<typeof externalMarkedMarkdownSpanSchema>
+): AigcDetectionMarkedMarkdownSpanDto {
+    return {
+        sentenceId: span.sentence_id,
+        blockId: span.block_id,
+        order: span.order,
+        start: span.start,
+        end: span.end,
+        text: span.text,
+        aiProbability: span.ai_probability,
+        probabilityMethod: span.probability_method,
+        matched: span.matched,
+    };
+}
+
+function toMarkdownDocumentDto(document: z.infer<typeof externalMarkdownDocumentSchema>) {
+    return {
+        cleanedMarkdown: document.cleaned_markdown,
+        markedMarkdown: document.marked_markdown,
+        markerStart: document.marker_start,
+        markerEnd: document.marker_end,
+        markedAiSentenceCount: document.marked_ai_sentence_count,
+        unmatchedAiSentenceCount: document.unmatched_ai_sentence_count,
+        spans: document.spans.map(toMarkedMarkdownSpanDto),
     };
 }
 
@@ -182,8 +253,42 @@ export function parseExternalTaskResultResponse(payload: unknown): ExternalTaskR
                 text: block.text,
             })),
         },
+        markdownDocument: result.data.markdown_document
+            ? toMarkdownDocumentDto(result.data.markdown_document)
+            : null,
         aiSentences: result.data.ai_sentences.map(toSentenceDto),
         blocks: result.data.blocks.map(toSegmentDto),
+    };
+}
+
+export function parseExternalCleanedMarkdownResponse(payload: unknown): AigcDetectionCleanedMarkdownDto {
+    const result = externalCleanedMarkdownSchema.safeParse(payload);
+    if (!result.success) {
+        throw aigcDetectionExternalSyncFailed('AIGC detection cleaned markdown response is invalid', result.error.flatten());
+    }
+
+    return {
+        taskId: result.data.task_id,
+        status: result.data.status,
+        markdown: result.data.markdown,
+    };
+}
+
+export function parseExternalMarkedMarkdownResponse(payload: unknown): AigcDetectionMarkedMarkdownDto {
+    const result = externalMarkedMarkdownSchema.safeParse(payload);
+    if (!result.success) {
+        throw aigcDetectionExternalSyncFailed('AIGC detection marked markdown response is invalid', result.error.flatten());
+    }
+
+    return {
+        taskId: result.data.task_id,
+        status: result.data.status,
+        markdown: result.data.markdown,
+        markerStart: result.data.marker_start,
+        markerEnd: result.data.marker_end,
+        markedAiSentenceCount: result.data.marked_ai_sentence_count,
+        unmatchedAiSentenceCount: result.data.unmatched_ai_sentence_count,
+        spans: result.data.spans.map(toMarkedMarkdownSpanDto),
     };
 }
 
@@ -199,6 +304,7 @@ export function toAigcDetectionResultDto(
         summary: externalResult.documentResult.label,
         segments: externalResult.blocks,
         sentences: externalResult.aiSentences,
+        markdownDocument: externalResult.markdownDocument,
         createdAt: task.createdAt,
         completedAt: task.completedAt,
     };

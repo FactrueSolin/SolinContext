@@ -33,6 +33,42 @@ export interface AigcDetectionSentenceDto {
     probabilityMethod: string;
 }
 
+export interface AigcDetectionMarkedMarkdownSpanDto {
+    sentenceId: string;
+    blockId: string;
+    order: number;
+    start: number;
+    end: number;
+    text: string;
+    aiProbability: number;
+    probabilityMethod: string;
+    matched: boolean;
+}
+
+export interface AigcDetectionCleanedMarkdownDto {
+    taskId: string;
+    status: string;
+    markdown: string;
+}
+
+export interface AigcDetectionMarkedMarkdownDto extends AigcDetectionCleanedMarkdownDto {
+    markerStart: string;
+    markerEnd: string;
+    markedAiSentenceCount: number;
+    unmatchedAiSentenceCount: number;
+    spans: AigcDetectionMarkedMarkdownSpanDto[];
+}
+
+export interface AigcDetectionMarkdownDocumentDto {
+    cleanedMarkdown: string;
+    markedMarkdown: string;
+    markerStart: string;
+    markerEnd: string;
+    markedAiSentenceCount: number;
+    unmatchedAiSentenceCount: number;
+    spans: AigcDetectionMarkedMarkdownSpanDto[];
+}
+
 export interface AigcDetectionResultDto {
     taskId: string;
     status: 'succeeded';
@@ -41,6 +77,7 @@ export interface AigcDetectionResultDto {
     summary: string | null;
     segments: AigcDetectionSegmentDto[];
     sentences: AigcDetectionSentenceDto[];
+    markdownDocument: AigcDetectionMarkdownDocumentDto | null;
     createdAt: number;
     completedAt: number;
 }
@@ -134,6 +171,7 @@ export interface ExternalTaskResultResponse {
             text: string;
         }>;
     };
+    markdownDocument: AigcDetectionMarkdownDocumentDto | null;
     aiSentences: AigcDetectionSentenceDto[];
     blocks: AigcDetectionSegmentDto[];
 }
