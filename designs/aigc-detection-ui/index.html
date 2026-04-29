@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>查询 AIGC 率 UI 设计稿</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">AIGC Detection Workspace</p>
+          <h1>查询 AIGC 率功能 UI 设计稿</h1>
+          <p class="hero-text">
+            以“任务中心”组织上传、检测、查看结果与失败恢复，避免把异步检测误设计成即时表单。
+          </p>
+        </div>
+        <div class="hero-metrics">
+          <div class="metric-card">
+            <span class="metric-label">支持格式</span>
+            <strong>PDF / DOC / DOCX</strong>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">交互重点</span>
+            <strong>列表 + 详情 + 上传抽屉</strong>
+          </div>
+          <div class="metric-card">
+            <span class="metric-label">主视觉焦点</span>
+            <strong>AIGC 率结果卡</strong>
+          </div>
+        </div>
+      </header>
+
+      <main class="showcase-grid">
+        <section class="board board-list">
+          <div class="window-bar">
+            <span></span><span></span><span></span>
+          </div>
+
+          <div class="workspace-top">
+            <div>
+              <p class="workspace-label">当前工作区</p>
+              <h2>ACTRUE 内容风控组</h2>
+              <p class="workspace-desc">
+                上传文档后，系统会异步计算文本的 AIGC 率与检测明细。
+              </p>
+            </div>
+            <button class="primary-button">上传文件并开始检测</button>
+          </div>
+
+          <div class="status-strip">
+            <div class="status-pill status-pill-highlight">
+              <span>今日新建</span>
+              <strong>14</strong>
+            </div>
+            <div class="status-pill">
+              <span>检测中</span>
+              <strong>3</strong>
+            </div>
+            <div class="status-pill">
+              <span>已完成</span>
+              <strong>126</strong>
+            </div>
+            <div class="status-pill">
+              <span>失败待处理</span>
+              <strong>2</strong>
+            </div>
+          </div>
+
+          <div class="toolbar">
+            <div class="filter-group">
+              <button class="chip chip-active">全部</button>
+              <button class="chip">检测中</button>
+              <button class="chip">已完成</button>
+              <button class="chip">失败</button>
+            </div>
+            <div class="search-box">搜索文件名 / SHA 摘要 / 创建人</div>
+          </div>
+
+          <div class="hint-banner">
+            <div>
+              <strong>上传说明</strong>
+              <p>仅支持单文件上传，建议在 50MB 以内。文档较大时，检测处理时间会更长。</p>
+            </div>
+            <span class="hint-tag">viewer 仅可查看结果</span>
+          </div>
+
+          <div class="task-list">
+            <article class="task-card task-card-live">
+              <div class="task-main">
+                <div class="task-title-row">
+                  <h3>2026Q2_品牌策略复盘.docx</h3>
+                  <span class="badge badge-processing">检测中</span>
+                </div>
+                <p class="task-meta">DOCX · 2.8 MB · 由 张青 创建 · 7 分钟前</p>
+                <div class="progress-line">
+                  <div class="progress-track">
+                    <div class="progress-fill progress-fill-60"></div>
+                  </div>
+                  <span>12 / 20 blocks</span>
+                </div>
+              </div>
+              <div class="task-side">
+                <p class="task-side-label">最新同步</p>
+                <strong>13:42</strong>
+                <a href="#detail">查看详情</a>
+              </div>
+            </article>
+
+            <article class="task-card task-card-done" id="detail">
+              <div class="task-main">
+                <div class="task-title-row">
+                  <h3>知识图谱调研终稿.pdf</h3>
+                  <span class="badge badge-success">已完成</span>
+                </div>
+                <p class="task-meta">PDF · 6.1 MB · 由 林澈 创建 · 今天 10:18</p>
+                <div class="result-inline">
+                  <div>
+                    <span class="mini-label">AIGC 率</span>
+                    <strong>38%</strong>
+                  </div>
+                  <div>
+                    <span class="mini-label">人工倾向</span>
+                    <strong>62%</strong>
+                  </div>
+                  <div>
+                    <span class="mini-label">检测结论</span>
+                    <strong>中低风险，可人工复核重点片段</strong>
+                  </div>
+                </div>
+              </div>
+              <div class="task-side">
+                <p class="task-side-label">结果来源</p>
+                <strong>复用历史结果</strong>
+                <a href="#detail-panel">查看详情</a>
+              </div>
+            </article>
+
+            <article class="task-card task-card-failed">
+              <div class="task-main">
+                <div class="task-title-row">
+                  <h3>论文修订说明_v5.doc</h3>
+                  <span class="badge badge-failed">提交失败</span>
+                </div>
+                <p class="task-meta">DOC · 1.2 MB · 由 王越 创建 · 昨天 19:26</p>
+                <p class="error-copy">检测服务暂时不可用，建议复用原文件稍后重新提交。</p>
+              </div>
+              <div class="task-side">
+                <p class="task-side-label">恢复动作</p>
+                <strong>可重试</strong>
+                <a href="#drawer">重新提交</a>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="board board-detail">
+          <div class="window-bar">
+            <span></span><span></span><span></span>
+          </div>
+
+          <div class="detail-header">
+            <div>
+              <p class="workspace-label">任务详情</p>
+              <h2>知识图谱调研终稿.pdf</h2>
+              <p class="workspace-desc">返回任务列表 · 创建于 2026-04-29 10:18 · 最近同步 10:24</p>
+            </div>
+            <div class="detail-actions">
+              <span class="badge badge-success">已完成</span>
+              <button class="ghost-button">刷新状态</button>
+            </div>
+          </div>
+
+          <div class="detail-summary">
+            <div class="summary-card summary-hero">
+              <p class="summary-label">AIGC 率</p>
+              <div class="score-ring">
+                <div class="score-ring-inner">
+                  <strong>38%</strong>
+                  <span>中低风险</span>
+                </div>
+              </div>
+              <p class="summary-foot">建议人工复核高风险段落，再决定是否需要改写。</p>
+            </div>
+
+            <div class="summary-stack">
+              <div class="summary-card">
+                <p class="summary-label">人工撰写倾向</p>
+                <strong class="summary-number">62%</strong>
+                <span class="summary-foot">整体表达更接近人工整理稿</span>
+              </div>
+              <div class="summary-card">
+                <p class="summary-label">文件信息</p>
+                <ul class="info-list">
+                  <li>文件类型：PDF</li>
+                  <li>文件大小：6.1 MB</li>
+                  <li>SHA 摘要：2f1a9c...d84e</li>
+                  <li>结果来源：已复用历史检测结果</li>
+                </ul>
+              </div>
+              <div class="summary-card">
+                <p class="summary-label">处理说明</p>
+                <p class="summary-foot">
+                  本次结果来自同内容历史文档，系统跳过重复检测并直接回填任务结果。
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="segment-panel">
+            <div class="segment-header">
+              <div>
+                <h3>高风险片段</h3>
+                <p>默认按风险从高到低展示，帮助用户优先复核最可疑内容。</p>
+              </div>
+              <span class="hint-tag">Top 5 Segments</span>
+            </div>
+
+            <div class="segment-list">
+              <article class="segment-item">
+                <div class="segment-score score-red">92</div>
+                <div class="segment-copy">
+                  <h4>片段 03</h4>
+                  <p>
+                    “通过多维语义映射与上下文补全机制，显著提升知识节点的生成效率与一致性……”
+                  </p>
+                </div>
+                <div class="segment-side-note">疑似模板化表达</div>
+              </article>
+
+              <article class="segment-item">
+                <div class="segment-score score-amber">74</div>
+                <div class="segment-copy">
+                  <h4>片段 07</h4>
+                  <p>
+                    “在行业实践层面，该方案具备较强的普适性，并可为后续治理闭环提供通用方法论……”
+                  </p>
+                </div>
+                <div class="segment-side-note">语言密度异常稳定</div>
+              </article>
+
+              <article class="segment-item">
+                <div class="segment-score score-blue">49</div>
+                <div class="segment-copy">
+                  <h4>片段 11</h4>
+                  <p>
+                    “本轮调研综合了业务访谈、公开资料和内部复盘记录，对现有流程做了结构化梳理……”
+                  </p>
+                </div>
+                <div class="segment-side-note">建议人工抽查</div>
+              </article>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <section class="drawer-showcase" id="drawer">
+        <div class="drawer-board">
+          <div class="drawer-copy">
+            <p class="eyebrow">Upload Drawer</p>
+            <h2>新建检测任务抽屉</h2>
+            <p>
+              不单独拆新建页，提交后直接回到任务中心并进入详情，减少用户在异步流程中的路径损耗。
+            </p>
+          </div>
+
+          <div class="drawer-panel">
+            <div class="drawer-head">
+              <div>
+                <h3>上传文件并开始检测</h3>
+                <p>支持 pdf / doc / docx，文档较大时可能需要更长处理时间。</p>
+              </div>
+              <span class="badge badge-processing">可创建任务</span>
+            </div>
+
+            <div class="upload-zone">
+              <div class="upload-icon">+</div>
+              <strong>拖拽文件到这里，或点击选择文件</strong>
+              <p>单文件上传，默认上限 50MB</p>
+            </div>
+
+            <div class="selected-file">
+              <div>
+                <p class="mini-label">已选择文件</p>
+                <strong>知识图谱调研终稿.pdf</strong>
+              </div>
+              <span>PDF · 6.1 MB</span>
+            </div>
+
+            <div class="drawer-tips">
+              <div class="tip-card">
+                <strong>预校验</strong>
+                <p>前端先校验格式与大小，减少无效提交。</p>
+              </div>
+              <div class="tip-card">
+                <strong>结果复用</strong>
+                <p>若命中同 SHA 历史结果，可直接返回已完成状态。</p>
+              </div>
+            </div>
+
+            <div class="drawer-actions">
+              <button class="ghost-button">取消</button>
+              <button class="primary-button">开始检测</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="mobile-showcase">
+        <div class="mobile-copy">
+          <p class="eyebrow">Mobile View</p>
+          <h2>移动端保留首屏状态与结果焦点</h2>
+        </div>
+
+        <div class="phone-row">
+          <article class="phone-frame">
+            <div class="phone-screen">
+              <div class="phone-header">
+                <span>ACTRUE</span>
+                <strong>AIGC 检测</strong>
+              </div>
+              <div class="phone-block highlight">
+                <p class="mini-label">当前工作区</p>
+                <h3>内容风控组</h3>
+                <button class="primary-button primary-button-small">上传文件</button>
+              </div>
+              <div class="phone-block">
+                <div class="phone-row-line">
+                  <strong>2026Q2_品牌策略复盘.docx</strong>
+                  <span class="badge badge-processing">检测中</span>
+                </div>
+                <p class="task-meta">12 / 20 blocks · 最近同步 13:42</p>
+              </div>
+              <div class="phone-block">
+                <div class="phone-row-line">
+                  <strong>知识图谱调研终稿.pdf</strong>
+                  <span class="badge badge-success">38%</span>
+                </div>
+                <p class="task-meta">已复用历史结果</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="phone-frame">
+            <div class="phone-screen">
+              <div class="phone-header">
+                <span>结果摘要</span>
+                <strong>任务详情</strong>
+              </div>
+              <div class="phone-score">
+                <p class="summary-label">AIGC 率</p>
+                <strong>38%</strong>
+                <span>中低风险</span>
+              </div>
+              <div class="phone-block">
+                <p class="mini-label">高风险片段</p>
+                <h3>片段 03</h3>
+                <p class="task-meta">疑似模板化表达，建议优先人工复核。</p>
+              </div>
+              <div class="phone-block">
+                <p class="mini-label">文件信息</p>
+                <p class="task-meta">PDF · 6.1 MB · SHA 2f1a9c...d84e</p>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>
