@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import "./globals.css";
 import { EditorProvider } from "./contexts/EditorContext";
 
@@ -49,6 +50,11 @@ export default function RootLayout({
           {children}
         </EditorProvider>
       </body>
+      <Script
+        src="https://umami.cd.actrue.cn/script.js"
+        data-website-id="26bb8f34-b62a-4725-8a4e-51c159b5bd9e"
+        strategy="afterInteractive"
+      />
     </html>
   );
 }
