@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     AlertCircle,
     ArrowLeft,
@@ -34,8 +34,19 @@ import type {
     AigcDetectionTaskSummary,
     AigcDetectionTextDetectionDto,
 } from '../lib/aigc-detection/dto';
+import {
+    AigcRewriteClientError,
+    consumeAigcRewriteStream,
+    listAigcRewritePresets,
+    requestAigcRewriteStream,
+} from '../lib/aigc-rewrite/client';
 import { getCurrentSession } from '../lib/workspaces/client';
 import { buildWorkspaceModulePath } from '../lib/workspace-routing';
+import AigcRewriteSuggestionsPanel, {
+    type RewriteSuggestion,
+    type RewriteSuggestionDetectionStatus,
+    type RewriteSuggestionStatus,
+} from './AigcRewriteSuggestionsPanel';
 import MarkdownPreview from './ui/MarkdownPreview';
 
 type TaskFilter = 'all' | 'processing' | 'succeeded' | 'failed';
@@ -43,6 +54,15 @@ type TaskFilter = 'all' | 'processing' | 'succeeded' | 'failed';
 const pollingStatuses: AigcDetectionTaskStatus[] = ['queued_local', 'submitted', 'processing'];
 const supportedExtensions = ['pdf', 'doc', 'docx'];
 const uploadLimitText = '支持 pdf / doc / docx，单文件大小以内网配置上限为准。';
+const rewriteSuggestionConcurrencyLimit = 4;
+const rewriteSuggestionStorageVersion = 1;
+
+interface SavedRewriteSuggestionDraft {
+    version: typeof rewriteSuggestionStorageVersion;
+    presetName: string | null;
+    suggestions: RewriteSuggestion[];
+    savedAt: string;
+}
 
 function formatDateTime(value: number | null) {
     if (!value) {
@@ -124,6 +144,66 @@ function getLikelihoodBadgeClass(label: string | null | undefined) {
     return 'border-slate-200 bg-slate-50 text-slate-700';
 }
 
+function isAiLikelyLabel(label: string | null | undefined) {
+    return normalizeLikelihoodLabel(label) === 'ai_likely';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function readString(value: unknown, fallback = '') {
+    return typeof value === 'string' ? value : fallback;
+}
+
+function readNullableString(value: unknown) {
+    return typeof value === 'string' ? value : null;
+}
+
+function readNumber(value: unknown, fallback: number | null = null) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function readRewriteSuggestionStatus(value: unknown): RewriteSuggestionStatus {
+    if (value === 'pending' || value === 'streaming' || value === 'succeeded' || value === 'failed') {
+        return value;
+    }
+
+    return 'pending';
+}
+
+function readRewriteSuggestionDetectionStatus(value: unknown): RewriteSuggestionDetectionStatus {
+    if (value === 'idle' || value === 'checking' || value === 'succeeded' || value === 'failed') {
+        return value;
+    }
+
+    return 'idle';
+}
+
+function sanitizeRewriteDetectionErrorMessage(value: string | null) {
+    if (!value) {
+        return null;
+    }
+
+    const lowerValue = value.toLowerCase();
+    const exposesInternalDetector =
+        lowerValue.includes('detector error') ||
+        lowerValue.includes('internal server error') ||
+        lowerValue.includes('http://') ||
+        lowerValue.includes('https://') ||
+        lowerValue.includes('/internal/');
+
+    if (exposesInternalDetector) {
+        return '改写句 AIGC 率复检失败，检测服务暂时无法处理这句话。改写结果已保留，可稍后重新生成。';
+    }
+
+    return value;
+}
+
+function createRewriteSuggestionStorageKey(workspaceSlug: string, taskId: string) {
+    return `aicontext:aigc-detection:rewrite-suggestions:${workspaceSlug}:${taskId}`;
+}
+
 function getTaskErrorMessage(error: unknown, fallback: string) {
     if (error instanceof AigcDetectionApiError) {
         switch (error.code) {
@@ -135,6 +215,10 @@ function getTaskErrorMessage(error: unknown, fallback: string) {
                 return '当前工作区没有执行该操作的权限。';
             case 'AIGC_DETECTION_TASK_NOT_COMPLETED':
                 return '检测结果尚未完成，请稍后再试。';
+            case 'AIGC_DETECTION_EXTERNAL_SYNC_FAILED':
+                return '检测服务暂时不可用或无法处理当前文本，请稍后重试。';
+            case 'AIGC_DETECTION_EXTERNAL_SUBMIT_FAILED':
+                return '检测任务提交失败，请稍后重试。';
             default:
                 return error.message || fallback;
         }
@@ -145,6 +229,94 @@ function getTaskErrorMessage(error: unknown, fallback: string) {
     }
 
     return fallback;
+}
+
+function getRewriteSuggestionErrorMessage(error: unknown) {
+    if (error instanceof AigcRewriteClientError) {
+        return error.message || '改写建议生成失败，请稍后重试。';
+    }
+
+    if (error instanceof Error && error.message) {
+        return error.message;
+    }
+
+    return '改写建议生成失败，请稍后重试。';
+}
+
+function createRewriteSuggestions(sentences: AigcDetectionResultDto['sentences']): RewriteSuggestion[] {
+    return sentences
+        .filter((sentence) => isAiLikelyLabel(sentence.label))
+        .slice()
+        .sort((left, right) => left.order - right.order)
+        .map((sentence) => ({
+            sentenceId: sentence.sentenceId,
+            order: sentence.order,
+            sourceText: sentence.text,
+            rewrittenText: '',
+            aiProbability: sentence.aiProbability,
+            label: sentence.label,
+            status: 'pending',
+            error: null,
+            rewrittenAiProbability: null,
+            rewrittenLabel: null,
+            rewrittenDetectionStatus: 'idle',
+            rewrittenDetectionError: null,
+        }));
+}
+
+function normalizeSavedRewriteSuggestion(value: unknown): RewriteSuggestion | null {
+    if (!isRecord(value)) {
+        return null;
+    }
+
+    const sentenceId = readString(value.sentenceId);
+    const sourceText = readString(value.sourceText);
+
+    if (!sentenceId || !sourceText) {
+        return null;
+    }
+
+    const status = readRewriteSuggestionStatus(value.status);
+    const detectionStatus = readRewriteSuggestionDetectionStatus(value.rewrittenDetectionStatus);
+
+    return {
+        sentenceId,
+        order: readNumber(value.order, 0) ?? 0,
+        sourceText,
+        rewrittenText: readString(value.rewrittenText),
+        aiProbability: readNumber(value.aiProbability, 0) ?? 0,
+        label: readString(value.label),
+        status: status === 'streaming' ? 'failed' : status,
+        error: status === 'streaming' ? '上次生成被刷新中断，可重新生成。' : readNullableString(value.error),
+        rewrittenAiProbability: readNumber(value.rewrittenAiProbability),
+        rewrittenLabel: readNullableString(value.rewrittenLabel),
+        rewrittenDetectionStatus: detectionStatus === 'checking' ? 'failed' : detectionStatus,
+        rewrittenDetectionError:
+            detectionStatus === 'checking'
+                ? '上次复检被刷新中断，可重新生成后再次复检。'
+                : sanitizeRewriteDetectionErrorMessage(readNullableString(value.rewrittenDetectionError)),
+    };
+}
+
+function normalizeSavedRewriteSuggestionDraft(value: unknown): SavedRewriteSuggestionDraft | null {
+    if (!isRecord(value) || value.version !== rewriteSuggestionStorageVersion || !Array.isArray(value.suggestions)) {
+        return null;
+    }
+
+    const suggestions = value.suggestions
+        .map((item) => normalizeSavedRewriteSuggestion(item))
+        .filter((item): item is RewriteSuggestion => item !== null);
+
+    if (suggestions.length === 0) {
+        return null;
+    }
+
+    return {
+        version: rewriteSuggestionStorageVersion,
+        presetName: readNullableString(value.presetName),
+        suggestions,
+        savedAt: readString(value.savedAt),
+    };
 }
 
 function SearchField({
@@ -909,6 +1081,17 @@ function TaskDetailPage({
     const [error, setError] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
     const [isRetrying, setIsRetrying] = useState(false);
+    const [rewriteSuggestions, setRewriteSuggestions] = useState<RewriteSuggestion[]>([]);
+    const [rewriteSuggestionError, setRewriteSuggestionError] = useState<string | null>(null);
+    const [rewriteSuggestionPresetName, setRewriteSuggestionPresetName] = useState<string | null>(null);
+    const [isGeneratingRewriteSuggestions, setIsGeneratingRewriteSuggestions] = useState(false);
+    const [isRewriteSuggestionHydrated, setIsRewriteSuggestionHydrated] = useState(false);
+    const rewriteSuggestionAbortRef = useRef<AbortController | null>(null);
+    const aiLikelySentences = useMemo(() => createRewriteSuggestions(result?.sentences ?? []), [result]);
+    const rewriteSuggestionStorageKey = useMemo(
+        () => createRewriteSuggestionStorageKey(workspaceSlug, taskId),
+        [taskId, workspaceSlug]
+    );
 
     const backHref = useMemo(() => {
         const query = new URLSearchParams();
@@ -975,6 +1158,74 @@ function TaskDetailPage({
     }, [loadTask]);
 
     useEffect(() => {
+        rewriteSuggestionAbortRef.current?.abort();
+        rewriteSuggestionAbortRef.current = null;
+        setIsGeneratingRewriteSuggestions(false);
+        setIsRewriteSuggestionHydrated(false);
+
+        if (!result?.taskId) {
+            setRewriteSuggestions([]);
+            setRewriteSuggestionError(null);
+            setRewriteSuggestionPresetName(null);
+            setIsRewriteSuggestionHydrated(true);
+            return;
+        }
+
+        try {
+            const stored = localStorage.getItem(rewriteSuggestionStorageKey);
+            const parsed = stored ? normalizeSavedRewriteSuggestionDraft(JSON.parse(stored) as unknown) : null;
+
+            setRewriteSuggestions(parsed?.suggestions ?? []);
+            setRewriteSuggestionPresetName(parsed?.presetName ?? null);
+            setRewriteSuggestionError(null);
+        } catch {
+            setRewriteSuggestions([]);
+            setRewriteSuggestionError(null);
+            setRewriteSuggestionPresetName(null);
+        } finally {
+            setIsRewriteSuggestionHydrated(true);
+        }
+    }, [result?.taskId, rewriteSuggestionStorageKey]);
+
+    useEffect(() => {
+        if (!isRewriteSuggestionHydrated || !result?.taskId) {
+            return;
+        }
+
+        if (rewriteSuggestions.length === 0) {
+            localStorage.removeItem(rewriteSuggestionStorageKey);
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            const draft: SavedRewriteSuggestionDraft = {
+                version: rewriteSuggestionStorageVersion,
+                presetName: rewriteSuggestionPresetName,
+                suggestions: rewriteSuggestions,
+                savedAt: new Date().toISOString(),
+            };
+
+            localStorage.setItem(rewriteSuggestionStorageKey, JSON.stringify(draft));
+        }, 120);
+
+        return () => {
+            window.clearTimeout(timeoutId);
+        };
+    }, [
+        isRewriteSuggestionHydrated,
+        result?.taskId,
+        rewriteSuggestionPresetName,
+        rewriteSuggestionStorageKey,
+        rewriteSuggestions,
+    ]);
+
+    useEffect(() => {
+        return () => {
+            rewriteSuggestionAbortRef.current?.abort();
+        };
+    }, []);
+
+    useEffect(() => {
         if (!task || !pollingStatuses.includes(task.status)) {
             return;
         }
@@ -988,7 +1239,244 @@ function TaskDetailPage({
         };
     }, [loadTask, task]);
 
+    function updateRewriteSuggestion(sentenceId: string, patch: Partial<RewriteSuggestion>) {
+        setRewriteSuggestions((current) =>
+            current.map((item) => (item.sentenceId === sentenceId ? { ...item, ...patch } : item))
+        );
+    }
+
+    async function generateSingleRewriteSuggestion(
+        suggestion: RewriteSuggestion,
+        presetId: string,
+        signal: AbortSignal
+    ) {
+        let outputText = '';
+        let streamError: string | null = null;
+
+        try {
+            const response = await requestAigcRewriteStream(
+                workspaceSlug,
+                {
+                    presetId,
+                    targetText: suggestion.sourceText,
+                },
+                signal
+            );
+
+            await consumeAigcRewriteStream(
+                response,
+                {
+                    onDelta: (payload) => {
+                        if (payload.channel !== 'output') {
+                            return;
+                        }
+
+                        outputText += payload.text;
+                        setRewriteSuggestions((current) =>
+                            current.map((item) =>
+                                item.sentenceId === suggestion.sentenceId
+                                    ? {
+                                          ...item,
+                                          rewrittenText: item.rewrittenText + payload.text,
+                                      }
+                                    : item
+                            )
+                        );
+                    },
+                    onError: (payload) => {
+                        streamError = payload.message;
+                    },
+                },
+                signal
+            );
+
+            if (signal.aborted) {
+                return;
+            }
+
+            if (streamError) {
+                throw new Error(streamError);
+            }
+
+            const normalizedOutputText = outputText.trim();
+
+            if (!normalizedOutputText) {
+                throw new Error('改写服务没有返回可展示的文本。');
+            }
+
+            updateRewriteSuggestion(suggestion.sentenceId, {
+                rewrittenText: normalizedOutputText,
+                status: 'succeeded',
+                error: null,
+                rewrittenDetectionStatus: 'checking',
+                rewrittenDetectionError: null,
+            });
+
+            try {
+                const detectionResult = await detectAigcText(
+                    workspaceSlug,
+                    {
+                        text: normalizedOutputText,
+                        minTokens: 0,
+                    },
+                    signal
+                );
+
+                if (signal.aborted) {
+                    return;
+                }
+
+                updateRewriteSuggestion(suggestion.sentenceId, {
+                    rewrittenAiProbability: detectionResult.aiProbability,
+                    rewrittenLabel: detectionResult.skipped ? '已跳过' : detectionResult.label,
+                    rewrittenDetectionStatus: 'succeeded',
+                    rewrittenDetectionError: null,
+                });
+            } catch (detectionError) {
+                if (signal.aborted) {
+                    return;
+                }
+
+                updateRewriteSuggestion(suggestion.sentenceId, {
+                    rewrittenDetectionStatus: 'failed',
+                    rewrittenDetectionError: sanitizeRewriteDetectionErrorMessage(
+                        getTaskErrorMessage(detectionError, '改写句 AIGC 率复检失败，请稍后重试。')
+                    ),
+                });
+            }
+        } catch (rewriteError) {
+            if (signal.aborted) {
+                return;
+            }
+
+            updateRewriteSuggestion(suggestion.sentenceId, {
+                status: 'failed',
+                error: getRewriteSuggestionErrorMessage(rewriteError),
+            });
+
+            throw rewriteError;
+        }
+    }
+
+    async function generateRewriteSuggestionsConcurrently(
+        suggestions: RewriteSuggestion[],
+        presetId: string,
+        signal: AbortSignal
+    ) {
+        const failures: unknown[] = [];
+        let nextIndex = 0;
+
+        async function runWorker() {
+            while (!signal.aborted) {
+                const currentIndex = nextIndex;
+                nextIndex += 1;
+
+                const suggestion = suggestions[currentIndex];
+                if (!suggestion) {
+                    return;
+                }
+
+                try {
+                    await generateSingleRewriteSuggestion(suggestion, presetId, signal);
+                } catch (rewriteError) {
+                    if (!signal.aborted) {
+                        failures.push(rewriteError);
+                    }
+                }
+            }
+        }
+
+        const workerCount = Math.min(rewriteSuggestionConcurrencyLimit, suggestions.length);
+        await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+
+        return failures;
+    }
+
+    async function handleGenerateRewriteSuggestions() {
+        if (!result) {
+            setRewriteSuggestionError('检测结果尚未加载，暂时不能生成修改建议。');
+            return;
+        }
+
+        if (aiLikelySentences.length === 0) {
+            setRewriteSuggestionError('当前检测结果没有 ai_likely 句子。');
+            return;
+        }
+
+        rewriteSuggestionAbortRef.current?.abort();
+
+        const controller = new AbortController();
+        const nextSuggestions = aiLikelySentences.map((item) => ({ ...item }));
+
+        rewriteSuggestionAbortRef.current = controller;
+        setRewriteSuggestions(nextSuggestions);
+        setRewriteSuggestionError(null);
+        setRewriteSuggestionPresetName(null);
+        setIsGeneratingRewriteSuggestions(true);
+
+        try {
+            const presets = await listAigcRewritePresets(workspaceSlug);
+
+            if (controller.signal.aborted) {
+                return;
+            }
+
+            const preset = presets[0];
+
+            if (!preset) {
+                throw new Error('当前工作区没有可用的降低 AIGC 预设模板。');
+            }
+
+            setRewriteSuggestionPresetName(preset.name);
+            nextSuggestions.forEach((suggestion) => {
+                updateRewriteSuggestion(suggestion.sentenceId, {
+                rewrittenText: '',
+                status: 'streaming',
+                error: null,
+                rewrittenAiProbability: null,
+                rewrittenLabel: null,
+                rewrittenDetectionStatus: 'idle',
+                rewrittenDetectionError: null,
+            });
+        });
+
+            const failures = await generateRewriteSuggestionsConcurrently(
+                nextSuggestions,
+                preset.id,
+                controller.signal
+            );
+
+            if (controller.signal.aborted) {
+                return;
+            }
+
+            const hasRateLimitedFailure = failures.some(
+                (failure) => failure instanceof AigcRewriteClientError && failure.status === 429
+            );
+
+            if (hasRateLimitedFailure) {
+                setRewriteSuggestionError('部分建议生成失败：改写服务并发或频率受限，请稍后重试失败项。');
+            } else if (failures.length > 0) {
+                setRewriteSuggestionError(`有 ${failures.length} 条修改建议生成失败，已保留其它成功结果。`);
+            }
+        } catch (rewriteError) {
+            if (!controller.signal.aborted) {
+                setRewriteSuggestionError(getRewriteSuggestionErrorMessage(rewriteError));
+            }
+        } finally {
+            if (rewriteSuggestionAbortRef.current === controller) {
+                rewriteSuggestionAbortRef.current = null;
+            }
+
+            setIsGeneratingRewriteSuggestions(false);
+        }
+    }
+
     async function handleRetry() {
+        rewriteSuggestionAbortRef.current?.abort();
+        setRewriteSuggestions([]);
+        setRewriteSuggestionError(null);
+        setRewriteSuggestionPresetName(null);
         setIsRetrying(true);
         setActionError(null);
 
@@ -1224,6 +1712,18 @@ function TaskDetailPage({
                     </div>
                 )}
             </section>
+
+            <AigcRewriteSuggestionsPanel
+                taskStatus={task.status}
+                aiLikelySuggestions={aiLikelySentences}
+                rewriteSuggestions={rewriteSuggestions}
+                rewriteSuggestionError={rewriteSuggestionError}
+                rewriteSuggestionPresetName={rewriteSuggestionPresetName}
+                isGeneratingRewriteSuggestions={isGeneratingRewriteSuggestions}
+                onGenerate={() => {
+                    void handleGenerateRewriteSuggestions();
+                }}
+            />
 
             <section className="mt-6">
                 <article className="rounded-[28px] border border-white/70 bg-white/85 p-5 shadow-[0_24px_64px_-52px_rgba(15,23,42,0.5)]">

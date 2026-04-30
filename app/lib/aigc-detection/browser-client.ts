@@ -161,7 +161,11 @@ export function createAigcDetectionTask(workspaceSlug: string, payload: {
     });
 }
 
-export function detectAigcText(workspaceSlug: string, payload: { text: string; minTokens?: number | null }) {
+export function detectAigcText(
+    workspaceSlug: string,
+    payload: { text: string; minTokens?: number | null },
+    signal?: AbortSignal
+) {
     return request<AigcDetectionTextDetectionDto>(`${getModulePath(workspaceSlug)}/text`, {
         method: 'POST',
         headers: {
@@ -171,5 +175,6 @@ export function detectAigcText(workspaceSlug: string, payload: { text: string; m
             text: payload.text,
             minTokens: payload.minTokens ?? null,
         }),
+        signal,
     });
 }

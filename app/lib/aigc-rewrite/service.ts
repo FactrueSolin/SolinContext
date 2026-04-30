@@ -39,8 +39,8 @@ const ROUTE_PATH = '/api/workspaces/[workspaceSlug]/aigc-rewrite/generate';
 const DEFAULT_THINKING_BUDGET = 10000;
 const DEFAULT_TIMEOUT_MS = 120000;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60000;
-const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 5;
-const DEFAULT_MAX_CONCURRENT_REQUESTS = 1;
+const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 60;
+const DEFAULT_MAX_CONCURRENT_REQUESTS = 4;
 
 const rateLimitWindows = new Map<string, RateLimitWindow>();
 const concurrentExecutions = new Map<string, number>();
