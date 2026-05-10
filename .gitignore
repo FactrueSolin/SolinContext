@@ -44,3 +44,5 @@ next-env.d.ts
 # data
 /data/
 logs/
+
+aicontext-backup.zip

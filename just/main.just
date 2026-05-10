@@ -85,3 +85,23 @@ systemd-uninstall service=default_service_name:
 
 systemd-uninstall-user service=default_service_name:
   @"{{systemd_dir}}/uninstall-service.sh" user "{{service}}"
+
+backup_zip := "aicontext-backup.zip"
+
+pack data_dir=default_data_dir:
+  @cd "{{project_root}}" && zip -r "{{backup_zip}}" "{{data_dir}}"
+
+restore data_dir=default_data_dir:
+  @cd "{{project_root}}" && bash -c '\
+    if [ ! -f "{{backup_zip}}" ]; then \
+      echo "Error: {{backup_zip}} not found"; \
+      exit 1; \
+    fi; \
+    timestamp=$(date +%Y%m%d%H%M%S); \
+    if [ -d "{{data_dir}}" ]; then \
+      echo "Backing up existing {{data_dir}} to {{data_dir}}-backup-$$timestamp"; \
+      mv "{{data_dir}}" "{{data_dir}}-backup-$$timestamp"; \
+    fi; \
+    echo "Restoring from {{backup_zip}}"; \
+    unzip -q "{{backup_zip}}"; \
+    echo "Restore complete"'

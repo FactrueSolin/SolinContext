@@ -20,6 +20,8 @@ just test
 just build
 just standalone-build
 just standalone-start
+just pack
+just restore
 ```
 
 ### 命令用途
@@ -40,6 +42,10 @@ just standalone-start
   - 先执行依赖安装和生产构建，再把 `public` 与 `.next/static` 同步到 `.next/standalone/`，得到可直接运行的 standalone 产物。
 - `just standalone-start`
   - 从仓库根目录直接运行 `.next/standalone/server.js`，适合在安装 `systemd` 前本机预演。
+- `just pack`
+  - 将 `data/` 目录打包为根目录下的 `aicontext-backup.zip`。
+- `just restore`
+  - 将 `aicontext-backup.zip` 恢复到 `data/` 目录。会先将现有 `data/` 备份为 `data-backup-<时间戳>/`，再解压覆盖。
 
 ## 参数默认值
 
@@ -69,6 +75,29 @@ just dev 0.0.0.0 3001
 just standalone-start .env 127.0.0.1 43000 data
 just systemd-deploy aicontext .env 127.0.0.1 43000 data
 ```
+
+## 数据备份与恢复
+
+```bash
+just pack
+just pack [data_dir]
+just restore
+just restore [data_dir]
+```
+
+- `just pack` — 将 `data/` 打包为 `aicontext-backup.zip`
+- `just restore` — 备份现有 `data/` 为 `data-backup-<时间戳>/`，再从 zip 恢复
+
+示例：
+
+```bash
+just pack
+just pack /custom/data/path
+just restore
+just restore /custom/data/path
+```
+
+注意：`aicontext-backup.zip` 已加入 `.gitignore`，不会被提交到仓库。
 
 ## systemd 部署
 
