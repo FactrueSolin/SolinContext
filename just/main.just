@@ -4,7 +4,7 @@ systemd_dir := project_root + "/just/systemd"
 default_service_name := "aicontext"
 default_dev_host := "127.0.0.1"
 default_dev_port := "3001"
-default_prod_host := "127.0.0.1"
+default_prod_host := "0.0.0.0"
 default_prod_port := "43000"
 default_env_file := ".env"
 default_data_dir := "data"
@@ -85,6 +85,58 @@ systemd-uninstall service=default_service_name:
 
 systemd-uninstall-user service=default_service_name:
   @"{{systemd_dir}}/uninstall-service.sh" user "{{service}}"
+
+launchd_dir := project_root + "/just/launchd"
+
+launchd-print service=default_service_name env_file=default_env_file host=default_prod_host port=default_prod_port data_dir=default_data_dir:
+  @"{{launchd_dir}}/render-plist.sh" system "{{service}}" "{{project_root}}" "{{env_file}}" "{{host}}" "{{port}}" "{{data_dir}}"
+
+launchd-print-user service=default_service_name env_file=default_env_file host=default_prod_host port=default_prod_port data_dir=default_data_dir:
+  @"{{launchd_dir}}/render-plist.sh" user "{{service}}" "{{project_root}}" "{{env_file}}" "{{host}}" "{{port}}" "{{data_dir}}"
+
+launchd-install service=default_service_name env_file=default_env_file host=default_prod_host port=default_prod_port data_dir=default_data_dir:
+  @"{{launchd_dir}}/install-service.sh" system "{{service}}" "{{project_root}}" "{{env_file}}" "{{host}}" "{{port}}" "{{data_dir}}"
+
+launchd-install-user service=default_service_name env_file=default_env_file host=default_prod_host port=default_prod_port data_dir=default_data_dir:
+  @"{{launchd_dir}}/install-service.sh" user "{{service}}" "{{project_root}}" "{{env_file}}" "{{host}}" "{{port}}" "{{data_dir}}"
+
+launchd-deploy service=default_service_name env_file=default_env_file host=default_prod_host port=default_prod_port data_dir=default_data_dir:
+  @"{{systemd_dir}}/build-standalone.sh" "{{project_root}}"
+  @"{{launchd_dir}}/install-service.sh" system "{{service}}" "{{project_root}}" "{{env_file}}" "{{host}}" "{{port}}" "{{data_dir}}"
+
+launchd-deploy-user service=default_service_name env_file=default_env_file host=default_prod_host port=default_prod_port data_dir=default_data_dir:
+  @"{{systemd_dir}}/build-standalone.sh" "{{project_root}}"
+  @"{{launchd_dir}}/install-service.sh" user "{{service}}" "{{project_root}}" "{{env_file}}" "{{host}}" "{{port}}" "{{data_dir}}"
+
+launchd-restart service=default_service_name:
+  @"{{launchd_dir}}/control-service.sh" restart system "{{service}}"
+
+launchd-restart-user service=default_service_name:
+  @"{{launchd_dir}}/control-service.sh" restart user "{{service}}"
+
+launchd-status service=default_service_name:
+  @"{{launchd_dir}}/control-service.sh" status system "{{service}}"
+
+launchd-status-user service=default_service_name:
+  @"{{launchd_dir}}/control-service.sh" status user "{{service}}"
+
+launchd-logs service=default_service_name lines="100":
+  @"{{launchd_dir}}/control-service.sh" logs system "{{service}}" "{{lines}}"
+
+launchd-logs-user service=default_service_name lines="100":
+  @"{{launchd_dir}}/control-service.sh" logs user "{{service}}" "{{lines}}"
+
+launchd-follow service=default_service_name:
+  @"{{launchd_dir}}/control-service.sh" follow system "{{service}}"
+
+launchd-follow-user service=default_service_name:
+  @"{{launchd_dir}}/control-service.sh" follow user "{{service}}"
+
+launchd-uninstall service=default_service_name:
+  @"{{launchd_dir}}/uninstall-service.sh" system "{{service}}"
+
+launchd-uninstall-user service=default_service_name:
+  @"{{launchd_dir}}/uninstall-service.sh" user "{{service}}"
 
 backup_zip := "aicontext-backup.zip"
 
